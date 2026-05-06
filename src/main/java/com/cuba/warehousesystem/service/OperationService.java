@@ -3,6 +3,7 @@ package com.cuba.warehousesystem.service;
 import com.cuba.warehousesystem.dto.OperationRequest;
 import com.cuba.warehousesystem.exception.EntityNotFoundException;
 import com.cuba.warehousesystem.exception.InsufficientStockException;
+import com.cuba.warehousesystem.exception.InvalidOperationException;
 import com.cuba.warehousesystem.exception.StorageCapacityException;
 import com.cuba.warehousesystem.model.Counterparty;
 import com.cuba.warehousesystem.model.Operation;
@@ -93,7 +94,7 @@ public class OperationService {
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
         if (operation.getStatus() != OperationStatus.DRAFT) {
-            throw new IllegalStateException("Operation is already processed or cancelled.");
+            throw new InvalidOperationException("Operation is already processed or cancelled.");
         }
 
         validateOperation(operation);

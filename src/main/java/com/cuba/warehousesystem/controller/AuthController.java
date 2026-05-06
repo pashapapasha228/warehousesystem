@@ -3,6 +3,7 @@ package com.cuba.warehousesystem.controller;
 import com.cuba.warehousesystem.dto.AuthRequest;
 import com.cuba.warehousesystem.dto.AuthResponse;
 import com.cuba.warehousesystem.service.JwtService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -23,15 +24,12 @@ public class AuthController {
     private final JwtService jwtService;
 
     @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@RequestBody AuthRequest request) {
-        // Аутентификация пользователя
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.username(), request.password())
         );
-        // Устанавливаем аутентификацию в контексте безопасности
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
-        // Генерируем JWT токен для аутентифицированного пользователя
         String jwt = jwtService.generateToken(authentication.getName());
         return ResponseEntity.ok(new AuthResponse(jwt));
     }
