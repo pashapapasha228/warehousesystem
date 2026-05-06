@@ -6,4 +6,5 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface EdiProcessingQueueRepository extends JpaRepository<EdiProcessingQueue, Long> {
+    boolean existsByEdiMessage_Id(Long ediMessageId);
 }
