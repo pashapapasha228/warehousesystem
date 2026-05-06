@@ -9,4 +9,6 @@ import java.util.Optional;
 @Repository
 public interface EdiPartnerRepository extends JpaRepository<EdiPartner, Long> {
     Optional<EdiPartner> findByCode(String code);
+
+    boolean existsByCode(String code);
 }

@@ -14,6 +14,8 @@ import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -51,6 +53,7 @@ public class EdiMessage {
     @Column(name = "raw_payload", columnDefinition = "text")
     private String rawPayload;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "normalized_payload", columnDefinition = "jsonb")
     private String normalizedPayload;
 
