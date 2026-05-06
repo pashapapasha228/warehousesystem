@@ -12,6 +12,8 @@ import org.springframework.stereotype.Repository;
 public interface EdiProcessingQueueRepository extends JpaRepository<EdiProcessingQueue, Long> {
     boolean existsByEdiMessage_Id(Long ediMessageId);
 
+    long countByStatus(EdiQueueStatus status);
+
     @EntityGraph(attributePaths = {"ediMessage", "ediMessage.partner"})
     Page<EdiProcessingQueue> findAll(Pageable pageable);
 

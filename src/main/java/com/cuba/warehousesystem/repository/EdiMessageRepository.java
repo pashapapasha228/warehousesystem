@@ -11,6 +11,10 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface EdiMessageRepository extends JpaRepository<EdiMessage, Long> {
+    long countByStatus(EdiMessageStatus status);
+
+    long countByMessageType(EdiMessageType messageType);
+
     @EntityGraph(attributePaths = {"partner", "relatedOperation"})
     Page<EdiMessage> findAll(Pageable pageable);
 

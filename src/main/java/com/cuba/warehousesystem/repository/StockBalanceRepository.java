@@ -13,6 +13,10 @@ import java.util.Optional;
 
 @Repository
 public interface StockBalanceRepository extends JpaRepository<StockBalance, StockBalanceId> {
+    @Override
+    @EntityGraph(attributePaths = {"product", "cell", "cell.warehouse"})
+    List<StockBalance> findAll();
+
     @EntityGraph(attributePaths = {"product", "cell", "cell.warehouse"})
     Optional<StockBalance> findByProduct_IdAndCell_Id(Long productId, Long cellId);
 

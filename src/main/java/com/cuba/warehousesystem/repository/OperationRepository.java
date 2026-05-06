@@ -39,14 +39,19 @@ public interface OperationRepository extends JpaRepository<Operation, Long> {
     @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty"})
     Page<Operation> findByStatus(OperationStatus status, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"warehouse", "counterparty", "items", "items.product", "items.fromCell", "items.toCell"})
     @Query("SELECT o FROM Operation o WHERE o.status = 'COMPLETED' AND o.createdAt BETWEEN :start AND :end AND o.type = :type")
     List<Operation> findCompletedOperationsByTypeAndPeriod(LocalDateTime start, LocalDateTime end, OperationType type);
 
     // --- НОВЫЙ метод для аналитики по поставщикам ---
+    @EntityGraph(attributePaths = {"counterparty", "items", "items.product"})
     @Query("SELECT o FROM Operation o WHERE o.status = 'COMPLETED' AND o.createdAt BETWEEN :start AND :end AND o.type = :type AND o.counterparty = :counterparty")
     List<Operation> findCompletedOperationsByTypePeriodAndCounterparty(
             LocalDateTime start, LocalDateTime end, OperationType type, Counterparty counterparty);
 
     // Общий метод для получения операций по периоду и статусу (может пригодиться)
+    @EntityGraph(attributePaths = {"warehouse", "counterparty", "items", "items.product", "items.fromCell", "items.toCell"})
     List<Operation> findByCreatedAtBetweenAndStatus(LocalDateTime start, LocalDateTime end, OperationStatus status);
+
+    long countByStatus(OperationStatus status);
 }

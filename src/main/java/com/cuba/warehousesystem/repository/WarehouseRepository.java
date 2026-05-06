@@ -9,4 +9,6 @@ import java.util.Optional;
 @Repository
 public interface WarehouseRepository extends JpaRepository<Warehouse, Long> {
     Optional<Warehouse> findByCode(String code);
+
+    long countByIsActiveTrue();
 }
