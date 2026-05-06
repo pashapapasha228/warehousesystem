@@ -1,11 +1,26 @@
 package com.cuba.warehousesystem.service;
 
 import com.cuba.warehousesystem.dto.OperationRequest;
+import com.cuba.warehousesystem.exception.EntityNotFoundException;
 import com.cuba.warehousesystem.exception.InsufficientStockException;
 import com.cuba.warehousesystem.exception.StorageCapacityException;
-import com.cuba.warehousesystem.model.*;
-import com.cuba.warehousesystem.repository.*;
-import jakarta.persistence.EntityNotFoundException;
+import com.cuba.warehousesystem.model.Counterparty;
+import com.cuba.warehousesystem.model.Operation;
+import com.cuba.warehousesystem.model.OperationItem;
+import com.cuba.warehousesystem.model.OperationStatus;
+import com.cuba.warehousesystem.model.OperationType;
+import com.cuba.warehousesystem.model.Product;
+import com.cuba.warehousesystem.model.StockBalance;
+import com.cuba.warehousesystem.model.StorageCell;
+import com.cuba.warehousesystem.model.User;
+import com.cuba.warehousesystem.model.Warehouse;
+import com.cuba.warehousesystem.repository.CounterpartyRepository;
+import com.cuba.warehousesystem.repository.OperationRepository;
+import com.cuba.warehousesystem.repository.ProductRepository;
+import com.cuba.warehousesystem.repository.StockBalanceRepository;
+import com.cuba.warehousesystem.repository.StorageCellRepository;
+import com.cuba.warehousesystem.repository.UserRepository;
+import com.cuba.warehousesystem.repository.WarehouseRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,199 +33,170 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Transactional
 public class OperationService {
-        private final OperationRepository operationRepository;
-        private final StockBalanceRepository stockBalanceRepository;
-        private final UserRepository userRepository;
-        private final ProductRepository productRepository;
-        private final WarehouseRepository warehouseRepository;
-        private final StorageCellRepository storageCellRepository;
 
-        public Operation createDraftOperation(OperationRequest request, String username) {
-            User user = userRepository.findByUsername(username)
-                    .orElseThrow(() -> new EntityNotFoundException("User not found"));
+    private final OperationRepository operationRepository;
+    private final StockBalanceRepository stockBalanceRepository;
+    private final UserRepository userRepository;
+    private final ProductRepository productRepository;
+    private final WarehouseRepository warehouseRepository;
+    private final StorageCellRepository storageCellRepository;
+    private final CounterpartyRepository counterpartyRepository;
 
-            Warehouse warehouse = warehouseRepository.findById(request.warehouseId())
-                    .orElseThrow(() -> new EntityNotFoundException("Warehouse not found"));
+    public Operation createDraftOperation(OperationRequest request, String username) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        Warehouse warehouse = warehouseRepository.findById(request.warehouseId())
+                .orElseThrow(() -> new EntityNotFoundException("Warehouse not found"));
+        Counterparty counterparty = request.counterpartyId() == null
+                ? null
+                : counterpartyRepository.findById(request.counterpartyId())
+                .orElseThrow(() -> new EntityNotFoundException("Counterparty not found"));
 
-            Operation operation = new Operation();
-            operation.setOperationNumber(generateOperationNumber(request.type()));
-            operation.setType(OperationType.valueOf(request.type()));
-            operation.setStatus(OperationStatus.DRAFT);
-            operation.setWarehouse(warehouse);
-            operation.setCreatedBy(user);
+        OperationType type = OperationType.valueOf(request.type());
+        Operation operation = new Operation();
+        operation.setOperationNumber(generateOperationNumber(type.name()));
+        operation.setType(type);
+        operation.setStatus(OperationStatus.DRAFT);
+        operation.setWarehouse(warehouse);
+        operation.setCreatedBy(user);
+        operation.setCounterparty(counterparty);
 
-            for (OperationRequest.ItemRequest itemReq : request.items()) {
-                OperationItem item = new OperationItem();
-                item.setProduct(productRepository.findById(itemReq.productId()).orElse(null));
-                item.setQuantity(itemReq.quantity());
+        for (OperationRequest.ItemRequest itemReq : request.items()) {
+            Product product = productRepository.findById(itemReq.productId())
+                    .orElseThrow(() -> new EntityNotFoundException("Product not found"));
 
-                if (itemReq.fromCellId() != null) {
-                    item.setFromCell(storageCellRepository.findById(itemReq.fromCellId()).orElse(null));
-                }
-                if (itemReq.toCellId() != null) {
-                    item.setToCell(storageCellRepository.findById(itemReq.toCellId()).orElse(null));
-                }
+            OperationItem item = new OperationItem();
+            item.setProduct(product);
+            item.setQuantity(itemReq.quantity());
+            item.setUnitOfMeasure(product.getUnitOfMeasure());
 
-                item.setOperation(operation);
-                operation.getItems().add(item);
+            if (itemReq.fromCellId() != null) {
+                item.setFromCell(storageCellRepository.findById(itemReq.fromCellId())
+                        .orElseThrow(() -> new EntityNotFoundException("Source cell not found")));
+            }
+            if (itemReq.toCellId() != null) {
+                item.setToCell(storageCellRepository.findById(itemReq.toCellId())
+                        .orElseThrow(() -> new EntityNotFoundException("Target cell not found")));
             }
 
-            return operationRepository.save(operation);
+            item.setOperation(operation);
+            operation.getItems().add(item);
         }
 
-        public Operation completeOperation(Long operationId, String username) {
-            Operation operation = operationRepository.findById(operationId)
-                    .orElseThrow(() -> new EntityNotFoundException("Operation not found"));
+        return operationRepository.save(operation);
+    }
 
-            if (operation.getStatus() != OperationStatus.DRAFT) {
-                throw new IllegalStateException("Operation is already processed or cancelled.");
-            }
+    public Operation completeOperation(Long operationId, String username) {
+        Operation operation = operationRepository.findById(operationId)
+                .orElseThrow(() -> new EntityNotFoundException("Operation not found"));
+        User completedBy = userRepository.findByUsername(username)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
-            // Проверка остатков для операций расхода
-            if (operation.getType() == OperationType.OUTCOME) {
-                for (OperationItem item : operation.getItems()) {
-                    StockBalance balance = stockBalanceRepository.findByProduct_IdAndCell_Id(
-                                    item.getProduct().getId(), item.getFromCell().getId())
-                            .orElseThrow(() -> new InsufficientStockException("No stock found for product " + item.getProduct().getSku()));
+        if (operation.getStatus() != OperationStatus.DRAFT) {
+            throw new IllegalStateException("Operation is already processed or cancelled.");
+        }
 
-                    if (balance.getQuantity() < item.getQuantity()) {
-                        throw new InsufficientStockException("Insufficient stock for product " + item.getProduct().getSku());
-                    }
-                }
-            }
+        validateOperation(operation);
 
-            // Проверка вместимости ячеек для операций прихода и перемещения
-            if (operation.getType() == OperationType.INCOME || operation.getType() == OperationType.MOVE) {
-                for (OperationItem item : operation.getItems()) {
-                    StorageCell targetCell = item.getToCell(); // Ячейка, в которую идёт товар
-                    Product product = item.getProduct();
+        for (OperationItem item : operation.getItems()) {
+            updateStockBalanceAndCell(item, operation.getType());
+        }
 
-                    // --- НОВАЯ ПРОВЕРКА: Физические габариты ---
-                    if (product.getLengthPerUnitCm().compareTo(targetCell.getLengthCm()) > 0 ||
-                            product.getWidthPerUnitCm().compareTo(targetCell.getWidthCm()) > 0 ||
-                            product.getHeightPerUnitCm().compareTo(targetCell.getHeightCm()) > 0) {
-                        throw new StorageCapacityException(
-                                String.format("Product %s dimensions (%.2f x %.2f x %.2f cm) exceed Cell %s dimensions (%.2f x %.2f x %.2f cm)",
-                                        product.getSku(),
-                                        product.getLengthPerUnitCm(), product.getWidthPerUnitCm(), product.getHeightPerUnitCm(),
-                                        targetCell.getCode(),
-                                        targetCell.getLengthCm(), targetCell.getWidthCm(), targetCell.getHeightCm()
-                                )
-                        );
-                    }
-                    // -----------------------------------------
+        operation.setStatus(OperationStatus.COMPLETED);
+        operation.setCompletedBy(completedBy);
+        operation.setCompletedAt(LocalDateTime.now());
 
-                    // Проверка общего места (capacity)
-                    StockBalance existingBalance = stockBalanceRepository.findByProduct_IdAndCell_Id(
-                            product.getId(), targetCell.getId()).orElse(new StockBalance(product, targetCell, 0));
+        return operationRepository.save(operation);
+    }
 
-                    if ((existingBalance.getQuantity() + item.getQuantity()) > targetCell.getCapacity()) {
-                        throw new StorageCapacityException("Cell " + targetCell.getCode() + " has insufficient capacity for product " + product.getSku());
-                    }
-
-                    // Проверка веса
-                    BigDecimal totalWeightToAdd = product.getWeightPerUnitKg().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    if ((targetCell.getCurrentWeightKg().add(totalWeightToAdd)).compareTo(targetCell.getMaxWeightKg()) > 0) {
-                        throw new StorageCapacityException("Cell " + targetCell.getCode() + " will exceed max weight limit after adding product " + product.getSku());
-                    }
-
-                    // Проверка объёма (остаётся как дополнительная мера, но не заменяет проверку габаритов)
-                    BigDecimal totalVolumeToAdd = product.getVolumePerUnitCubicCm().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    if ((targetCell.getCurrentVolumeCubicCm().add(totalVolumeToAdd)).compareTo(targetCell.getCalculatedVolumeCubicCm()) > 0) {
-                        throw new StorageCapacityException("Cell " + targetCell.getCode() + " will exceed max volume limit after adding product " + product.getSku());
-                    }
-                }
-            }
-
-
-            // Обновление остатков и ячеек
+    private void validateOperation(Operation operation) {
+        if (operation.getType() == OperationType.OUTCOME || operation.getType() == OperationType.MOVE) {
             for (OperationItem item : operation.getItems()) {
-                updateStockBalanceAndCell(item, operation.getType());
-            }
+                StockBalance balance = stockBalanceRepository.findByProduct_IdAndCell_Id(
+                                item.getProduct().getId(), item.getFromCell().getId())
+                        .orElseThrow(() -> new InsufficientStockException("No stock found for product " + item.getProduct().getSku()));
 
-            // Финализация операции
-            operation.setStatus(OperationStatus.COMPLETED);
-            operation.setCompletedAt(LocalDateTime.now());
-
-            return operationRepository.save(operation);
-        }
-
-        private void updateStockBalanceAndCell(OperationItem item, OperationType type) {
-            switch (type) {
-                case INCOME -> {
-                    StockBalance balance = getOrCreateBalance(item.getProduct(), item.getToCell());
-                    balance.setQuantity(balance.getQuantity() + item.getQuantity());
-                    stockBalanceRepository.save(balance);
-
-                    // Обновляем текущий вес и объём в ячейке
-                    StorageCell cell = item.getToCell();
-                    BigDecimal weightToAdd = item.getProduct().getWeightPerUnitKg().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    BigDecimal volumeToAdd = item.getProduct().getVolumePerUnitCubicCm().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    cell.setCurrentWeightKg(cell.getCurrentWeightKg().add(weightToAdd));
-                    cell.setCurrentVolumeCubicCm(cell.getCurrentVolumeCubicCm().add(volumeToAdd));
-                    storageCellRepository.save(cell);
-                }
-                case OUTCOME -> {
-                    StockBalance balance = stockBalanceRepository.findByProduct_IdAndCell_Id(
-                                    item.getProduct().getId(), item.getFromCell().getId())
-                            .orElseThrow(() -> new InsufficientStockException("No stock to decrease"));
-                    balance.setQuantity(Math.max(0, balance.getQuantity() - item.getQuantity())); // Защита от отрицательных значений
-                    stockBalanceRepository.save(balance);
-
-                    // Обновляем текущий вес и объём в ячейке
-                    StorageCell cell = item.getFromCell();
-                    BigDecimal weightToRemove = item.getProduct().getWeightPerUnitKg().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    weightToRemove = weightToRemove.min(cell.getCurrentWeightKg()); // Защита от отрицательных
-                    BigDecimal volumeToRemove = item.getProduct().getVolumePerUnitCubicCm().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    volumeToRemove = volumeToRemove.min(cell.getCurrentVolumeCubicCm()); // Защита от отрицательных
-                    cell.setCurrentWeightKg(cell.getCurrentWeightKg().subtract(weightToRemove));
-                    cell.setCurrentVolumeCubicCm(cell.getCurrentVolumeCubicCm().subtract(volumeToRemove));
-                    storageCellRepository.save(cell);
-                }
-                case MOVE -> {
-                    // Уменьшаем из одной ячейки (аналогично OUTCOME)
-                    StockBalance fromBalance = stockBalanceRepository.findByProduct_IdAndCell_Id(
-                                    item.getProduct().getId(), item.getFromCell().getId())
-                            .orElseThrow(() -> new InsufficientStockException("No stock to move"));
-                    fromBalance.setQuantity(Math.max(0, fromBalance.getQuantity() - item.getQuantity()));
-                    stockBalanceRepository.save(fromBalance);
-
-                    StorageCell fromCell = item.getFromCell();
-                    BigDecimal weightToRemove = item.getProduct().getWeightPerUnitKg().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    weightToRemove = weightToRemove.min(fromCell.getCurrentWeightKg());
-                    BigDecimal volumeToRemove = item.getProduct().getVolumePerUnitCubicCm().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    volumeToRemove = volumeToRemove.min(fromCell.getCurrentVolumeCubicCm());
-                    fromCell.setCurrentWeightKg(fromCell.getCurrentWeightKg().subtract(weightToRemove));
-                    fromCell.setCurrentVolumeCubicCm(fromCell.getCurrentVolumeCubicCm().subtract(volumeToRemove));
-                    storageCellRepository.save(fromCell);
-
-                    // Увеличиваем в другой ячейке (аналогично INCOME)
-                    StockBalance toBalance = getOrCreateBalance(item.getProduct(), item.getToCell());
-                    toBalance.setQuantity(toBalance.getQuantity() + item.getQuantity());
-                    stockBalanceRepository.save(toBalance);
-
-                    StorageCell toCell = item.getToCell();
-                    BigDecimal weightToAdd = item.getProduct().getWeightPerUnitKg().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    BigDecimal volumeToAdd = item.getProduct().getVolumePerUnitCubicCm().multiply(BigDecimal.valueOf(item.getQuantity()));
-                    toCell.setCurrentWeightKg(toCell.getCurrentWeightKg().add(weightToAdd));
-                    toCell.setCurrentVolumeCubicCm(toCell.getCurrentVolumeCubicCm().add(volumeToAdd));
-                    storageCellRepository.save(toCell);
+                if (balance.getQuantity() < item.getQuantity()) {
+                    throw new InsufficientStockException("Insufficient stock for product " + item.getProduct().getSku());
                 }
             }
         }
 
-        private StockBalance getOrCreateBalance(Product product, StorageCell cell) {
-            return stockBalanceRepository.findByProduct_IdAndCell_Id(product.getId(), cell.getId())
-                    .orElseGet(() -> {
-                        StockBalance newBalance = new StockBalance();
-                        newBalance.setProduct(product);
-                        newBalance.setCell(cell);
-                        newBalance.setQuantity(0);
-                        return newBalance;
-                    });
+        if (operation.getType() == OperationType.INCOME || operation.getType() == OperationType.MOVE) {
+            for (OperationItem item : operation.getItems()) {
+                validateTargetCell(item);
+            }
+        }
+    }
+
+    private void validateTargetCell(OperationItem item) {
+        StorageCell targetCell = item.getToCell();
+        Product product = item.getProduct();
+
+        if (product.getLengthCm().compareTo(targetCell.getLengthCm()) > 0
+                || product.getWidthCm().compareTo(targetCell.getWidthCm()) > 0
+                || product.getHeightCm().compareTo(targetCell.getHeightCm()) > 0) {
+            throw new StorageCapacityException("Product " + product.getSku() + " dimensions exceed cell " + targetCell.getCode());
         }
 
-        private String generateOperationNumber(String type) {
-            return type.toUpperCase() + "-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+        StockBalance existingBalance = stockBalanceRepository.findByProduct_IdAndCell_Id(
+                product.getId(), targetCell.getId()).orElse(new StockBalance(product, targetCell, 0));
+
+        if ((existingBalance.getQuantity() + item.getQuantity()) > targetCell.getCapacityUnits()) {
+            throw new StorageCapacityException("Cell " + targetCell.getCode() + " has insufficient capacity for product " + product.getSku());
         }
+
+        BigDecimal totalWeightToAdd = product.getWeightPerUnitKg().multiply(BigDecimal.valueOf(item.getQuantity()));
+        if (targetCell.getCurrentWeightKg().add(totalWeightToAdd).compareTo(targetCell.getMaxWeightKg()) > 0) {
+            throw new StorageCapacityException("Cell " + targetCell.getCode() + " will exceed max weight limit after adding product " + product.getSku());
+        }
+
+        BigDecimal totalVolumeToAdd = product.getVolumePerUnitCm3().multiply(BigDecimal.valueOf(item.getQuantity()));
+        if (targetCell.getCurrentVolumeCm3().add(totalVolumeToAdd).compareTo(targetCell.getMaxVolumeCm3()) > 0) {
+            throw new StorageCapacityException("Cell " + targetCell.getCode() + " will exceed max volume limit after adding product " + product.getSku());
+        }
+    }
+
+    private void updateStockBalanceAndCell(OperationItem item, OperationType type) {
+        switch (type) {
+            case INCOME -> increaseBalance(item.getProduct(), item.getToCell(), item.getQuantity());
+            case OUTCOME -> decreaseBalance(item.getProduct(), item.getFromCell(), item.getQuantity());
+            case MOVE -> {
+                decreaseBalance(item.getProduct(), item.getFromCell(), item.getQuantity());
+                increaseBalance(item.getProduct(), item.getToCell(), item.getQuantity());
+            }
+        }
+    }
+
+    private void increaseBalance(Product product, StorageCell cell, Integer quantity) {
+        StockBalance balance = getOrCreateBalance(product, cell);
+        balance.setQuantity(balance.getQuantity() + quantity);
+        stockBalanceRepository.save(balance);
+
+        cell.setCurrentWeightKg(cell.getCurrentWeightKg().add(product.getWeightPerUnitKg().multiply(BigDecimal.valueOf(quantity))));
+        cell.setCurrentVolumeCm3(cell.getCurrentVolumeCm3().add(product.getVolumePerUnitCm3().multiply(BigDecimal.valueOf(quantity))));
+        storageCellRepository.save(cell);
+    }
+
+    private void decreaseBalance(Product product, StorageCell cell, Integer quantity) {
+        StockBalance balance = stockBalanceRepository.findByProduct_IdAndCell_Id(product.getId(), cell.getId())
+                .orElseThrow(() -> new InsufficientStockException("No stock to decrease"));
+        balance.setQuantity(balance.getQuantity() - quantity);
+        stockBalanceRepository.save(balance);
+
+        BigDecimal weightToRemove = product.getWeightPerUnitKg().multiply(BigDecimal.valueOf(quantity)).min(cell.getCurrentWeightKg());
+        BigDecimal volumeToRemove = product.getVolumePerUnitCm3().multiply(BigDecimal.valueOf(quantity)).min(cell.getCurrentVolumeCm3());
+        cell.setCurrentWeightKg(cell.getCurrentWeightKg().subtract(weightToRemove));
+        cell.setCurrentVolumeCm3(cell.getCurrentVolumeCm3().subtract(volumeToRemove));
+        storageCellRepository.save(cell);
+    }
+
+    private StockBalance getOrCreateBalance(Product product, StorageCell cell) {
+        return stockBalanceRepository.findByProduct_IdAndCell_Id(product.getId(), cell.getId())
+                .orElseGet(() -> new StockBalance(product, cell, 0));
+    }
+
+    private String generateOperationNumber(String type) {
+        return type.toUpperCase() + "-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    }
 }

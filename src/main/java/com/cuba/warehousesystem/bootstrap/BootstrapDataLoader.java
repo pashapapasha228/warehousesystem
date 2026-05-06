@@ -1,6 +1,7 @@
 package com.cuba.warehousesystem.bootstrap;
 
 import com.cuba.warehousesystem.model.User;
+import com.cuba.warehousesystem.model.UserRole;
 import com.cuba.warehousesystem.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,17 +33,17 @@ public class BootstrapDataLoader implements CommandLineRunner {
         User admin = new User();
         admin.setUsername("admin");
         admin.setPasswordHash(passwordEncoder.encode("admin123")); // Используем encoder
-        admin.setRole("ROLE_ADMIN"); // Важно: префикс ROLE_
+        admin.setRole(UserRole.ADMIN);
 
         User manager = new User();
         manager.setUsername("manager");
         manager.setPasswordHash(passwordEncoder.encode("manager123"));
-        manager.setRole("ROLE_MANAGER");
+        manager.setRole(UserRole.MANAGER);
 
         User storekeeper = new User();
         storekeeper.setUsername("storekeeper");
         storekeeper.setPasswordHash(passwordEncoder.encode("storekeeper123"));
-        storekeeper.setRole("ROLE_STOREKEEPER");
+        storekeeper.setRole(UserRole.STOREKEEPER);
 
         // Сохраняем в базу
         userRepository.save(admin);

@@ -22,25 +22,25 @@ public class OperationController {
     private final OperationService operationService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_MANAGER', 'ROLE_STOREKEEPER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ResponseEntity<OperationResponse> createDraft(@RequestBody OperationRequest request, Authentication authentication) {
         Operation op = operationService.createDraftOperation(request, authentication.getName());
-        return ResponseEntity.ok(mapToResponse(op));
+        return ResponseEntity.ok(mapToResponse(op)); // mapToResponse нужно обновить, если хочешь включать counterpartyId
     }
 
     @PutMapping("/{id}/complete")
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<OperationResponse> completeOperation(@PathVariable Long id, Authentication authentication) {
         Operation op = operationService.completeOperation(id, authentication.getName());
         return ResponseEntity.ok(mapToResponse(op));
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ROLE_ADMIN', 'ROLE_MANAGER', 'ROLE_STOREKEEPER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ResponseEntity<List<OperationResponse>> getAllOperations() {
-        // В реальном проекте здесь будет сервисный вызов
-        // Для простоты диплома можно вернуть пустой список или добавить логику
-        return ResponseEntity.ok(List.of()); // TODO: Implement service call
+        // Реализуй вызов сервиса для получения списка
+        // return ResponseEntity.ok(operationService.findAll().stream().map(this::mapToResponse).toList());
+        return ResponseEntity.ok(List.of()); // Пока заглушка
     }
 
     private OperationResponse mapToResponse(Operation op) {
@@ -61,6 +61,9 @@ public class OperationController {
                 op.getStatus(),
                 op.getWarehouse().getId(),
                 op.getCreatedBy().getId(),
+                // --- Добавляем ID контрагента ---
+                op.getCounterparty() != null ? op.getCounterparty().getId() : null,
+                // ----------------------------------
                 op.getCreatedAt(),
                 op.getCompletedAt(),
                 itemResponses

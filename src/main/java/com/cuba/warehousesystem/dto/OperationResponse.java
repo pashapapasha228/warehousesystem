@@ -13,6 +13,7 @@ public record OperationResponse(
         OperationStatus status,
         Long warehouseId,
         Long userId,
+        Long counterpartyId, // Может быть null
         LocalDateTime createdAt,
         LocalDateTime completedAt,
         List<OperationItemResponse> items

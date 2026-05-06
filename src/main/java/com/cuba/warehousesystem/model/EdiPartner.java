@@ -2,47 +2,53 @@ package com.cuba.warehousesystem.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.hibernate.envers.Audited;
 
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "users")
-@Audited
+@Table(name = "edi_partners")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class User {
+public class EdiPartner {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false, length = 100)
-    private String username;
+    @Column(unique = true, nullable = false, length = 50)
+    private String code;
 
-    @Column(name = "password_hash", nullable = false)
-    private String passwordHash;
+    @Column(nullable = false)
+    private String name;
 
-    @Column(name = "full_name")
-    private String fullName;
+    @Column(length = 50)
+    private String gln;
 
-    @Column(length = 150)
-    private String email;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "counterparty_id")
+    private Counterparty counterparty;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private UserRole role = UserRole.STOREKEEPER;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "default_warehouse_id")
+    private Warehouse defaultWarehouse;
+
+    @Column(name = "inbound_enabled", nullable = false)
+    private Boolean inboundEnabled = true;
+
+    @Column(name = "outbound_enabled", nullable = false)
+    private Boolean outboundEnabled = false;
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
@@ -55,7 +61,6 @@ public class User {
 
     @PrePersist
     void prePersist() {
-        normalizeDefaults();
         LocalDateTime now = LocalDateTime.now();
         createdAt = now;
         updatedAt = now;
@@ -63,16 +68,6 @@ public class User {
 
     @PreUpdate
     void preUpdate() {
-        normalizeDefaults();
         updatedAt = LocalDateTime.now();
-    }
-
-    private void normalizeDefaults() {
-        if (role == null) {
-            role = UserRole.STOREKEEPER;
-        }
-        if (isActive == null) {
-            isActive = true;
-        }
     }
 }

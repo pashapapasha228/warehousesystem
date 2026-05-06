@@ -18,31 +18,42 @@ import org.hibernate.envers.Audited;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "users")
+@Table(name = "counterparties")
 @Audited
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class User {
+public class Counterparty {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true, nullable = false, length = 100)
-    private String username;
+    @Column(unique = true, nullable = false, length = 50)
+    private String code;
 
-    @Column(name = "password_hash", nullable = false)
-    private String passwordHash;
+    @Column(nullable = false)
+    private String name;
 
-    @Column(name = "full_name")
-    private String fullName;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private CounterpartyType type;
+
+    @Column(name = "tax_id", length = 50)
+    private String taxId;
+
+    @Column(length = 50)
+    private String gln;
 
     @Column(length = 150)
     private String email;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private UserRole role = UserRole.STOREKEEPER;
+    @Column(length = 50)
+    private String phone;
+
+    private String address;
+
+    @Column(name = "contact_info")
+    private String contactInfo;
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
@@ -68,9 +79,6 @@ public class User {
     }
 
     private void normalizeDefaults() {
-        if (role == null) {
-            role = UserRole.STOREKEEPER;
-        }
         if (isActive == null) {
             isActive = true;
         }
