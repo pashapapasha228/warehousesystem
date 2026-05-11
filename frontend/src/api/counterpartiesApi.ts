@@ -1,0 +1,1 @@
+export { counterpartiesApi } from './resourcesApi';

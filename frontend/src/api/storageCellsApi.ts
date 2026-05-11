@@ -1,0 +1,1 @@
+export { storageCellsApi } from './resourcesApi';

@@ -1,0 +1,1 @@
+export { ediApi } from './resourcesApi';
