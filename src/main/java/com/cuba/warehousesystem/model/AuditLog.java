@@ -9,6 +9,8 @@ import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -37,6 +39,7 @@ public class AuditLog {
     @Column(name = "occurred_at", nullable = false)
     private LocalDateTime occurredAt = LocalDateTime.now();
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "details_json", columnDefinition = "jsonb")
     private String detailsJson;
 }

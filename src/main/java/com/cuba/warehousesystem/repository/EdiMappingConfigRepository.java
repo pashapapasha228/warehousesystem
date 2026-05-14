@@ -20,4 +20,10 @@ public interface EdiMappingConfigRepository extends JpaRepository<EdiMappingConf
             EdiMessageType messageType,
             String externalProductCode
     );
+
+    boolean existsByPartner_IdAndMessageTypeAndExternalProductCode(
+            Long partnerId,
+            EdiMessageType messageType,
+            String externalProductCode
+    );
 }

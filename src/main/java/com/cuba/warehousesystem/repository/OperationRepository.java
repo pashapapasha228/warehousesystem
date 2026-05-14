@@ -54,4 +54,6 @@ public interface OperationRepository extends JpaRepository<Operation, Long> {
     List<Operation> findByCreatedAtBetweenAndStatus(LocalDateTime start, LocalDateTime end, OperationStatus status);
 
     long countByStatus(OperationStatus status);
+
+    boolean existsByOperationNumber(String operationNumber);
 }
