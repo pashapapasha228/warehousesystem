@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface EdiMappingConfigRepository extends JpaRepository<EdiMappingConfig, Long> {
@@ -16,6 +17,18 @@ public interface EdiMappingConfigRepository extends JpaRepository<EdiMappingConf
     Page<EdiMappingConfig> findAll(Pageable pageable);
 
     Optional<EdiMappingConfig> findByPartner_IdAndMessageTypeAndExternalProductCodeAndIsActiveTrue(
+            Long partnerId,
+            EdiMessageType messageType,
+            String externalProductCode
+    );
+
+    Optional<EdiMappingConfig> findByPartner_IdAndMessageTypeAndExternalProductCode(
+            Long partnerId,
+            EdiMessageType messageType,
+            String externalProductCode
+    );
+
+    List<EdiMappingConfig> findAllByPartner_IdAndMessageTypeAndExternalProductCode(
             Long partnerId,
             EdiMessageType messageType,
             String externalProductCode

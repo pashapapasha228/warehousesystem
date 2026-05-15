@@ -6,11 +6,13 @@ import { getErrorMessage } from '../api/http';
 import { ErrorState, LoadingState } from '../components/feedback/StateViews';
 import { ResourceTable } from '../components/tables/ResourceTable';
 import { fmtDate } from '../utils/format';
+import { useTableSort } from '../utils/sorting';
 
 export function StockBalancesPage() {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
-  const query = useQuery({ queryKey: ['stock-balances', page, size], queryFn: () => operationsApi.stockBalances({ page, size, sort: 'productSku,asc' }) });
+  const tableSort = useTableSort('productSku', 'asc');
+  const query = useQuery({ queryKey: ['stock-balances', page, size, tableSort.sort], queryFn: () => operationsApi.stockBalances({ page, size, sort: tableSort.sort }) });
   return (
     <Stack spacing={2}>
       <Box display="flex" alignItems="center" gap={2}>
@@ -27,6 +29,11 @@ export function StockBalancesPage() {
           size={size}
           onPageChange={setPage}
           onSizeChange={(next) => { setSize(next); setPage(0); }}
+          {...tableSort.tableSortProps}
+          onSortChange={(sortBy, sortDirection) => {
+            tableSort.tableSortProps.onSortChange(sortBy, sortDirection);
+            setPage(0);
+          }}
           columns={[
             { key: 'productSku', label: 'SKU' },
             { key: 'productName', label: 'Товар' },

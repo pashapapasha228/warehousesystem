@@ -4,9 +4,20 @@ export type OperationType = 'INCOME' | 'OUTCOME' | 'MOVE';
 export type OperationStatus = 'DRAFT' | 'COMPLETED' | 'CANCELLED';
 export type OperationSource = 'MANUAL' | 'EDI';
 export type EdiMessageType = 'ORDERS' | 'DESADV' | 'ORDRSP';
+export type EdiDirection = 'INBOUND' | 'OUTBOUND';
 export type EdiMessageStatus = 'RECEIVED' | 'NORMALIZED' | 'PROCESSING' | 'PROCESSED' | 'FAILED';
 export type EdiQueueStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
 export type EdiAuditStatus = 'SUCCESS' | 'FAILED' | 'SKIPPED';
+
+export const ediMessageTypes: EdiMessageType[] = ['ORDERS', 'DESADV', 'ORDRSP'];
+export const ediMessageStatuses: EdiMessageStatus[] = ['RECEIVED', 'NORMALIZED', 'PROCESSING', 'PROCESSED', 'FAILED'];
+export const ediQueueStatuses: EdiQueueStatus[] = ['PENDING', 'RUNNING', 'DONE', 'FAILED'];
+
+export const ediMessageTypeLabels: Record<EdiMessageType, string> = {
+  ORDERS: 'ORDERS: customer order',
+  DESADV: 'DESADV: supplier shipment notice',
+  ORDRSP: 'ORDRSP: order response',
+};
 
 export const roleLabels: Record<UserRole, string> = {
   ADMIN: 'Администратор',

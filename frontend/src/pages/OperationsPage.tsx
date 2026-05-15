@@ -9,16 +9,18 @@ import { ErrorState, LoadingState } from '../components/feedback/StateViews';
 import { ResourceTable } from '../components/tables/ResourceTable';
 import { operationStatusLabels, operationTypeLabels, type OperationStatus, type OperationType } from '../types/enums';
 import { fmtDate } from '../utils/format';
+import { useTableSort } from '../utils/sorting';
 
 export function OperationsPage() {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [type, setType] = useState('');
   const [status, setStatus] = useState('');
+  const tableSort = useTableSort('id', 'desc');
   const navigate = useNavigate();
   const query = useQuery({
-    queryKey: ['operations', page, size, type, status],
-    queryFn: () => operationsApi.list({ page, size, sort: 'id,desc', type: type || undefined, status: status || undefined }),
+    queryKey: ['operations', page, size, type, status, tableSort.sort],
+    queryFn: () => operationsApi.list({ page, size, sort: tableSort.sort, type: type || undefined, status: status || undefined }),
   });
 
   return (
@@ -57,6 +59,11 @@ export function OperationsPage() {
           size={size}
           onPageChange={setPage}
           onSizeChange={(next) => { setSize(next); setPage(0); }}
+          {...tableSort.tableSortProps}
+          onSortChange={(sortBy, sortDirection) => {
+            tableSort.tableSortProps.onSortChange(sortBy, sortDirection);
+            setPage(0);
+          }}
           onView={(row) => navigate(`/operations/${row.id}`)}
           columns={[
             { key: 'operationNumber', label: 'Номер' },

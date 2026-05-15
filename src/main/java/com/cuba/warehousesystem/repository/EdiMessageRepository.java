@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+
 @Repository
 public interface EdiMessageRepository extends JpaRepository<EdiMessage, Long> {
     long countByStatus(EdiMessageStatus status);
@@ -16,6 +18,8 @@ public interface EdiMessageRepository extends JpaRepository<EdiMessage, Long> {
     long countByMessageType(EdiMessageType messageType);
 
     boolean existsByMessageRef(String messageRef);
+
+    Optional<EdiMessage> findByMessageRef(String messageRef);
 
     @EntityGraph(attributePaths = {"partner", "relatedOperation"})
     Page<EdiMessage> findAll(Pageable pageable);

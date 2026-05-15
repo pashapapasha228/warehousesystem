@@ -8,9 +8,13 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
+
 @Repository
 public interface EdiProcessingQueueRepository extends JpaRepository<EdiProcessingQueue, Long> {
     boolean existsByEdiMessage_Id(Long ediMessageId);
+
+    Optional<EdiProcessingQueue> findByEdiMessage_Id(Long ediMessageId);
 
     long countByStatus(EdiQueueStatus status);
 

@@ -59,7 +59,7 @@ type FormData = z.infer<typeof schema>;
 export function OperationCreatePage() {
   const navigate = useNavigate();
   const { control, register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: { type: 'INCOME', source: 'MANUAL', items: [{ quantity: 1 }] as any },
   });
   const items = useFieldArray({ control, name: 'items' });

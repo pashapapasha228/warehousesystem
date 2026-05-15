@@ -7,6 +7,7 @@ import com.cuba.warehousesystem.dto.EdiProcessResultResponse;
 import com.cuba.warehousesystem.dto.EdiProcessingQueueResponse;
 import com.cuba.warehousesystem.dto.OperationRequest;
 import com.cuba.warehousesystem.dto.OperationResponse;
+import com.cuba.warehousesystem.model.CounterpartyType;
 import com.cuba.warehousesystem.event.EdiMessageProcessedEvent;
 import com.cuba.warehousesystem.event.EdiMessageReceivedEvent;
 import com.cuba.warehousesystem.exception.BadRequestException;
@@ -23,6 +24,7 @@ import com.cuba.warehousesystem.model.EdiQueueStatus;
 import com.cuba.warehousesystem.model.OperationSource;
 import com.cuba.warehousesystem.model.OperationType;
 import com.cuba.warehousesystem.model.Product;
+import com.cuba.warehousesystem.model.StockBalance;
 import com.cuba.warehousesystem.repository.EdiAuditLogRepository;
 import com.cuba.warehousesystem.repository.EdiMappingConfigRepository;
 import com.cuba.warehousesystem.repository.EdiMessageRepository;
@@ -30,6 +32,8 @@ import com.cuba.warehousesystem.repository.EdiPartnerRepository;
 import com.cuba.warehousesystem.repository.EdiProcessingQueueRepository;
 import com.cuba.warehousesystem.repository.OperationRepository;
 import com.cuba.warehousesystem.repository.ProductRepository;
+import com.cuba.warehousesystem.repository.StockBalanceRepository;
+import com.cuba.warehousesystem.repository.StorageCellRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,6 +61,8 @@ public class EdiProcessingService {
     private final EdiProcessingQueueRepository ediProcessingQueueRepository;
     private final EdiAuditLogRepository ediAuditLogRepository;
     private final ProductRepository productRepository;
+    private final StockBalanceRepository stockBalanceRepository;
+    private final StorageCellRepository storageCellRepository;
     private final OperationRepository operationRepository;
     private final OperationService operationService;
     private final ApplicationEventPublisher eventPublisher;
@@ -183,16 +189,14 @@ public class EdiProcessingService {
     }
 
     private OperationResponse createOperationFromMessage(EdiMessage message, String username) {
-        if (message.getMessageType() == EdiMessageType.ORDRSP) {
+        ensureInboundPartnerCanBeProcessed(message);
+
+        if (message.getDirection() == EdiDirection.OUTBOUND || message.getMessageType() == EdiMessageType.ORDRSP) {
             return null;
         }
 
         JsonNode payload = parsePayload(message.getNormalizedPayload());
-        OperationType operationType = switch (message.getMessageType()) {
-            case ORDERS -> OperationType.OUTCOME;
-            case DESADV -> OperationType.INCOME;
-            case ORDRSP -> null;
-        };
+        OperationType operationType = resolveOperationType(message);
 
         Long warehouseId = readLong(payload, "warehouseId");
         if (warehouseId == null && message.getPartner().getDefaultWarehouse() != null) {
@@ -208,6 +212,7 @@ public class EdiProcessingService {
         }
 
         List<OperationRequest.ItemRequest> items = buildItems(message, payload);
+        validateEdiOperationItems(operationType, warehouseId, items);
         OperationRequest operationRequest = new OperationRequest(
                 operationType,
                 warehouseId,
@@ -219,6 +224,43 @@ public class EdiProcessingService {
                 items
         );
         return operationService.createDraftOperation(operationRequest, username == null ? "system" : username);
+    }
+
+    private void ensureInboundPartnerCanBeProcessed(EdiMessage message) {
+        EdiPartner partner = message.getPartner();
+        if (partner == null) {
+            throw new BadRequestException("EDI message must be linked to an EDI partner.");
+        }
+        if (!Boolean.TRUE.equals(partner.getIsActive())) {
+            throw new BadRequestException("EDI partner is inactive: " + partner.getCode());
+        }
+        if (message.getDirection() == EdiDirection.INBOUND && !Boolean.TRUE.equals(partner.getInboundEnabled())) {
+            throw new BadRequestException("EDI partner is not enabled for inbound messages: " + partner.getCode());
+        }
+        if (partner.getCounterparty() == null) {
+            throw new BadRequestException("EDI partner must be linked to a counterparty: " + partner.getCode());
+        }
+    }
+
+    private OperationType resolveOperationType(EdiMessage message) {
+        if (message.getDirection() != EdiDirection.INBOUND) {
+            throw new BadRequestException("Only inbound EDI messages can create warehouse operations.");
+        }
+
+        CounterpartyType counterpartyType = message.getPartner().getCounterparty().getType();
+        if (message.getMessageType() == EdiMessageType.DESADV && counterpartyType == CounterpartyType.SUPPLIER) {
+            return OperationType.INCOME;
+        }
+        if (message.getMessageType() == EdiMessageType.ORDERS && counterpartyType == CounterpartyType.CUSTOMER) {
+            return OperationType.OUTCOME;
+        }
+
+        throw new BadRequestException(
+                "Unsupported EDI scenario: " + message.getMessageType()
+                        + " " + message.getDirection()
+                        + " from " + counterpartyType
+                        + ". Expected DESADV from SUPPLIER or ORDERS from CUSTOMER."
+        );
     }
 
     private List<OperationRequest.ItemRequest> buildItems(EdiMessage message, JsonNode payload) {
@@ -240,6 +282,44 @@ public class EdiProcessingService {
             ));
         }
         return items;
+    }
+
+    private void validateEdiOperationItems(
+            OperationType operationType,
+            Long warehouseId,
+            List<OperationRequest.ItemRequest> items
+    ) {
+        for (OperationRequest.ItemRequest item : items) {
+            if (operationType == OperationType.INCOME) {
+                if (item.toCellId() == null) {
+                    throw new BadRequestException("EDI DESADV item requires toCellId for INCOME draft creation.");
+                }
+                ensureCellBelongsToWarehouse(item.toCellId(), warehouseId, "EDI DESADV item target cell");
+            }
+            if (operationType == OperationType.OUTCOME) {
+                if (item.fromCellId() == null) {
+                    throw new BadRequestException("EDI ORDERS item requires fromCellId for OUTCOME draft creation.");
+                }
+                ensureCellBelongsToWarehouse(item.fromCellId(), warehouseId, "EDI ORDERS item source cell");
+                ensureAvailableStock(item);
+            }
+        }
+    }
+
+    private void ensureCellBelongsToWarehouse(Long cellId, Long warehouseId, String context) {
+        storageCellRepository.findById(cellId)
+                .filter(cell -> cell.getWarehouse().getId().equals(warehouseId))
+                .orElseThrow(() -> new BadRequestException(context + " not found in warehouse: " + cellId));
+    }
+
+    private void ensureAvailableStock(OperationRequest.ItemRequest item) {
+        StockBalance balance = stockBalanceRepository.findByProduct_IdAndCell_Id(item.productId(), item.fromCellId())
+                .orElseThrow(() -> new BadRequestException("No stock found for EDI ORDERS productId "
+                        + item.productId() + " in fromCellId " + item.fromCellId()));
+        if (balance.getQuantity() - balance.getReservedQuantity() < item.quantity()) {
+            throw new BadRequestException("Insufficient available stock for EDI ORDERS productId "
+                    + item.productId() + " in fromCellId " + item.fromCellId());
+        }
     }
 
     private Product resolveProduct(EdiMessage message, JsonNode itemNode) {

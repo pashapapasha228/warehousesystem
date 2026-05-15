@@ -110,8 +110,10 @@ export function CounterpartiesPage() {
         { key: 'code', label: 'Код' },
         { key: 'name', label: 'Название' },
         { key: 'type', label: 'Тип', render: (r) => <Chip size="small" label={counterpartyTypeLabels[r.type]} /> },
+        { key: 'gln', label: 'GLN' },
         { key: 'email', label: 'Email' },
         { key: 'phone', label: 'Телефон' },
+        { key: 'contactInfo', label: 'Контактная информация' },
         { key: 'isActive', label: 'Статус', render: (r) => <BoolChip value={r.isActive} /> },
       ]}
       fields={[

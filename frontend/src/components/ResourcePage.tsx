@@ -7,7 +7,7 @@ import { useAuth } from '../auth/useAuth';
 import { ConfirmDialog } from './feedback/ConfirmDialog';
 import { ErrorState, LoadingState } from './feedback/StateViews';
 import { FieldDef, ResourceFormDialog } from './forms/ResourceFormDialog';
-import { Column, ResourceTable } from './tables/ResourceTable';
+import { Column, ResourceTable, type SortDirection } from './tables/ResourceTable';
 import type { UserRole } from '../types/enums';
 
 type Api<T> = {
@@ -42,11 +42,13 @@ export function ResourcePage<T extends { id?: number }>({
   const [formOpen, setFormOpen] = useState(false);
   const [deleting, setDeleting] = useState<T | null>(null);
   const [notice, setNotice] = useState('');
+  const [sortBy, setSortBy] = useState('id');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const allowed = canEdit(user?.role);
 
   const query = useQuery({
-    queryKey: [queryKey, page, size],
-    queryFn: () => api.list({ page, size, sort: 'id,desc' }),
+    queryKey: [queryKey, page, size, sortBy, sortDirection],
+    queryFn: () => api.list({ page, size, sort: `${sortBy},${sortDirection}` }),
   });
 
   const saveMutation = useMutation({
@@ -92,6 +94,13 @@ export function ResourcePage<T extends { id?: number }>({
           size={size}
           onPageChange={setPage}
           onSizeChange={(next) => { setSize(next); setPage(0); }}
+          sortBy={sortBy}
+          sortDirection={sortDirection}
+          onSortChange={(nextSortBy, nextSortDirection) => {
+            setSortBy(nextSortBy);
+            setSortDirection(nextSortDirection);
+            setPage(0);
+          }}
           onEdit={allowed ? (row) => { setEditing(row); setFormOpen(true); } : undefined}
           onDelete={allowed ? setDeleting : undefined}
         />
@@ -102,7 +111,9 @@ export function ResourcePage<T extends { id?: number }>({
         fields={fields}
         initialValues={editing as any}
         onClose={() => setFormOpen(false)}
-        onSubmit={(data) => saveMutation.mutateAsync(data)}
+        onSubmit={async (data) => {
+          await saveMutation.mutateAsync(data);
+        }}
       />
       <ConfirmDialog
         open={!!deleting}

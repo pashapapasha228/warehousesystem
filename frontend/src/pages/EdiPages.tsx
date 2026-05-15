@@ -12,6 +12,14 @@ import { BoolChip } from '../components/tables/ResourceTable';
 import { ResourceTable } from '../components/tables/ResourceTable';
 import { canManageEdi } from '../utils/permissions';
 import { fmtDate } from '../utils/format';
+import { useTableSort } from '../utils/sorting';
+import { ediMessageStatuses, ediMessageTypeLabels, ediMessageTypes, ediQueueStatuses, type EdiMessageType } from '../types/enums';
+
+const inboundPayloadExamples: Record<EdiMessageType, string> = {
+  DESADV: '{\n  "warehouseId": 1,\n  "documentDate": "2026-05-14",\n  "items": [\n    {\n      "externalProductCode": "SUPPLIER-SKU-001",\n      "quantity": 5,\n      "toCellId": 1,\n      "unitPrice": 10,\n      "unitOfMeasure": "pcs"\n    }\n  ]\n}',
+  ORDERS: '{\n  "warehouseId": 1,\n  "documentDate": "2026-05-14",\n  "items": [\n    {\n      "externalProductCode": "CUSTOMER-SKU-001",\n      "quantity": 2,\n      "fromCellId": 1,\n      "unitPrice": 10,\n      "unitOfMeasure": "pcs"\n    }\n  ]\n}',
+  ORDRSP: '{\n  "documentDate": "2026-05-14",\n  "items": []\n}',
+};
 
 export function EdiPartnersPage() {
   return (
@@ -61,7 +69,7 @@ export function EdiMappingsPage() {
       ]}
       fields={[
         { name: 'partnerId', label: 'ID партнера', type: 'number', required: true },
-        { name: 'messageType', label: 'Тип сообщения', type: 'select', required: true, options: ['ORDERS', 'DESADV', 'ORDRSP'].map((v) => ({ value: v, label: v })) },
+        { name: 'messageType', label: 'Тип сообщения', type: 'select', required: true, options: ediMessageTypes.map((v) => ({ value: v, label: ediMessageTypeLabels[v] })) },
         { name: 'externalProductCode', label: 'Внешний код товара', required: true },
         { name: 'externalUom', label: 'Внешняя ед.' },
         { name: 'internalProductId', label: 'ID внутреннего товара', type: 'number', required: true },
@@ -77,17 +85,18 @@ export function EdiMessagesPage() {
   const [size, setSize] = useState(10);
   const [type, setType] = useState('');
   const [status, setStatus] = useState('');
-  const query = useQuery({ queryKey: ['edi-messages', page, size, type, status], queryFn: () => ediApi.messages({ page, size, sort: 'id,desc', type: type || undefined, status: status || undefined }) });
+  const tableSort = useTableSort('id', 'desc');
+  const query = useQuery({ queryKey: ['edi-messages', page, size, type, status, tableSort.sort], queryFn: () => ediApi.messages({ page, size, sort: tableSort.sort, type: type || undefined, status: status || undefined }) });
   return (
     <Stack spacing={2}>
       <Typography variant="h4">EDI-сообщения</Typography>
       <Box display="flex" gap={2} flexWrap="wrap">
-        <FormControl sx={{ minWidth: 180 }}><InputLabel>Тип</InputLabel><Select label="Тип" value={type} onChange={(e) => setType(e.target.value)}><MenuItem value="">Все</MenuItem>{['ORDERS', 'DESADV', 'ORDRSP'].map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
-        <FormControl sx={{ minWidth: 180 }}><InputLabel>Статус</InputLabel><Select label="Статус" value={status} onChange={(e) => setStatus(e.target.value)}><MenuItem value="">Все</MenuItem>{['RECEIVED', 'NORMALIZED', 'PROCESSING', 'PROCESSED', 'FAILED'].map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
+        <FormControl sx={{ minWidth: 180 }}><InputLabel>Тип</InputLabel><Select label="Тип" value={type} onChange={(e) => setType(e.target.value)}><MenuItem value="">Все</MenuItem>{ediMessageTypes.map((v) => <MenuItem key={v} value={v}>{ediMessageTypeLabels[v]}</MenuItem>)}</Select></FormControl>
+        <FormControl sx={{ minWidth: 180 }}><InputLabel>Статус</InputLabel><Select label="Статус" value={status} onChange={(e) => setStatus(e.target.value)}><MenuItem value="">Все</MenuItem>{ediMessageStatuses.map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
       </Box>
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message={getErrorMessage(query.error)} />}
-      {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} columns={[
+      {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} {...tableSort.tableSortProps} onSortChange={(sortBy, sortDirection) => { tableSort.tableSortProps.onSortChange(sortBy, sortDirection); setPage(0); }} columns={[
         { key: 'id', label: 'ID' },
         { key: 'messageType', label: 'Тип' },
         { key: 'status', label: 'Статус' },
@@ -106,18 +115,19 @@ function InboundEdiForm() {
   const { user } = useAuth();
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
-  const { register, handleSubmit, reset } = useForm({
+  const { register, handleSubmit, reset, setValue, watch } = useForm({
     defaultValues: {
       partnerId: '',
       partnerCode: '',
-      messageType: 'ORDERS',
+      messageType: 'DESADV' as EdiMessageType,
       interchangeRef: '',
       messageRef: '',
       documentNumber: '',
       rawPayload: '',
-      normalizedPayload: '{\n  "items": []\n}',
+      normalizedPayload: inboundPayloadExamples.DESADV,
     },
   });
+  const selectedMessageType = watch('messageType') as EdiMessageType;
   const mutation = useMutation({ mutationFn: ediApi.inbound, onSuccess: (message) => { setOk(`Сообщение принято: #${message.id}`); reset(); }, onError: (err) => setError(getErrorMessage(err)) });
   if (!canManageEdi(user?.role)) return null;
   return (
@@ -130,12 +140,13 @@ function InboundEdiForm() {
           <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: 'repeat(3, 1fr)' }} gap={2}>
             <TextField label="partnerId" {...register('partnerId')} />
             <TextField label="partnerCode" {...register('partnerCode')} />
-            <TextField label="messageType" select defaultValue="ORDERS" {...register('messageType')}>{['ORDERS', 'DESADV', 'ORDRSP'].map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</TextField>
+            <TextField label="messageType" select defaultValue="DESADV" {...register('messageType')}>{ediMessageTypes.map((v) => <MenuItem key={v} value={v}>{ediMessageTypeLabels[v]}</MenuItem>)}</TextField>
             <TextField label="interchangeRef" {...register('interchangeRef')} />
             <TextField label="messageRef" {...register('messageRef')} />
             <TextField label="documentNumber" {...register('documentNumber')} />
           </Box>
           <TextField label="rawPayload" multiline minRows={3} {...register('rawPayload')} />
+          <Button variant="outlined" onClick={() => setValue('normalizedPayload', inboundPayloadExamples[selectedMessageType])}>Подставить пример payload</Button>
           <TextField label="normalizedPayload JSON" multiline minRows={5} className="mono" {...register('normalizedPayload')} />
           <Button startIcon={<Send />} variant="contained" disabled={mutation.isPending} onClick={handleSubmit((data) => {
             setError('');
@@ -152,19 +163,18 @@ function InboundEdiForm() {
 }
 
 export function EdiQueuePage() {
-  const { user } = useAuth();
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [status, setStatus] = useState('');
-  const query = useQuery({ queryKey: ['edi-queue', page, size, status], queryFn: () => ediApi.queue({ page, size, sort: 'id,desc', status: status || undefined }) });
-  const process = useMutation({ mutationFn: ediApi.process, onSuccess: () => query.refetch() });
+  const tableSort = useTableSort('id', 'desc');
+  const query = useQuery({ queryKey: ['edi-queue', page, size, status, tableSort.sort], queryFn: () => ediApi.queue({ page, size, sort: tableSort.sort, status: status || undefined }) });
   return (
     <Stack spacing={2}>
       <Typography variant="h4">Очередь EDI</Typography>
-      <FormControl sx={{ maxWidth: 220 }}><InputLabel>Статус</InputLabel><Select label="Статус" value={status} onChange={(e) => setStatus(e.target.value)}><MenuItem value="">Все</MenuItem>{['PENDING', 'RUNNING', 'DONE', 'FAILED'].map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
+      <FormControl sx={{ maxWidth: 220 }}><InputLabel>Статус</InputLabel><Select label="Статус" value={status} onChange={(e) => setStatus(e.target.value)}><MenuItem value="">Все</MenuItem>{ediQueueStatuses.map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message={getErrorMessage(query.error)} />}
-      {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} onView={canManageEdi(user?.role) ? (row) => process.mutate(row.id) : undefined} columns={[
+      {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} {...tableSort.tableSortProps} onSortChange={(sortBy, sortDirection) => { tableSort.tableSortProps.onSortChange(sortBy, sortDirection); setPage(0); }} columns={[
         { key: 'id', label: 'ID' },
         { key: 'ediMessageId', label: 'Сообщение' },
         { key: 'messageRef', label: 'Ref' },
@@ -181,13 +191,14 @@ export function EdiQueuePage() {
 export function EdiAuditPage() {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
-  const query = useQuery({ queryKey: ['edi-audit', page, size], queryFn: () => ediApi.audit({ page, size, sort: 'id,desc' }) });
+  const tableSort = useTableSort('id', 'desc');
+  const query = useQuery({ queryKey: ['edi-audit', page, size, tableSort.sort], queryFn: () => ediApi.audit({ page, size, sort: tableSort.sort }) });
   return (
     <Stack spacing={2}>
       <Typography variant="h4">Аудит EDI</Typography>
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message={getErrorMessage(query.error)} />}
-      {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} columns={[
+      {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} {...tableSort.tableSortProps} onSortChange={(sortBy, sortDirection) => { tableSort.tableSortProps.onSortChange(sortBy, sortDirection); setPage(0); }} columns={[
         { key: 'ediMessageId', label: 'Сообщение' },
         { key: 'stage', label: 'Этап' },
         { key: 'status', label: 'Статус' },

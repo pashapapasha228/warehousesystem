@@ -11,4 +11,6 @@ import org.springframework.stereotype.Repository;
 public interface EdiAuditLogRepository extends JpaRepository<EdiAuditLog, Long> {
     @EntityGraph(attributePaths = {"ediMessage"})
     Page<EdiAuditLog> findByEdiMessage_Id(Long ediMessageId, Pageable pageable);
+
+    boolean existsByEdiMessage_IdAndStage(Long ediMessageId, String stage);
 }

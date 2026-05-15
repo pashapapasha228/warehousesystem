@@ -1,6 +1,7 @@
 import type {
   CounterpartyType,
   EdiAuditStatus,
+  EdiDirection,
   EdiMessageStatus,
   EdiMessageType,
   EdiQueueStatus,
@@ -175,7 +176,7 @@ export type EdiMapping = {
 export type EdiMessage = {
   id: number;
   messageType: EdiMessageType;
-  direction: string;
+  direction: EdiDirection;
   status: EdiMessageStatus;
   interchangeRef?: string;
   messageRef?: string;

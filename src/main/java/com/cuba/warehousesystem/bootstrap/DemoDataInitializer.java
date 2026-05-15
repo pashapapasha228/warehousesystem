@@ -478,6 +478,7 @@ public class DemoDataInitializer implements ApplicationRunner {
             Map<String, Counterparty> counterparties
     ) {
         if (operationRepository.existsByOperationNumber("DEMO-OUT-0001")) {
+            normalizeExistingDemoOperations();
             return;
         }
 
@@ -494,7 +495,7 @@ public class DemoDataInitializer implements ApplicationRunner {
             Operation operation = new Operation();
             operation.setType(type);
             operation.setStatus(status);
-            operation.setSource(i % 4 == 0 ? OperationSource.EDI : OperationSource.MANUAL);
+            operation.setSource(type != OperationType.MOVE && i % 4 == 0 ? OperationSource.EDI : OperationSource.MANUAL);
             operation.setOperationNumber("DEMO-" + switch (type) {
                 case INCOME -> "IN";
                 case OUTCOME -> "OUT";
@@ -538,6 +539,16 @@ public class DemoDataInitializer implements ApplicationRunner {
             }
             operationRepository.save(operation);
         }
+    }
+
+    private void normalizeExistingDemoOperations() {
+        operationRepository.findAll().stream()
+                .filter(operation -> operation.getOperationNumber() != null && operation.getOperationNumber().startsWith("DEMO-MOV-"))
+                .filter(operation -> operation.getSource() == OperationSource.EDI)
+                .forEach(operation -> {
+                    operation.setSource(OperationSource.MANUAL);
+                    operationRepository.save(operation);
+                });
     }
 
     private String commentFor(OperationType type, OperationStatus status, int i) {
@@ -588,33 +599,25 @@ public class DemoDataInitializer implements ApplicationRunner {
 
         List<Product> mappedProducts = products.values().stream().limit(22).toList();
         for (EdiPartner partner : partners) {
+            List<EdiMessageType> supportedTypes = supportedMappingTypes(partner);
+            deactivateUnsupportedMappings(partner, supportedTypes);
             for (int i = 0; i < mappedProducts.size(); i++) {
                 Product product = mappedProducts.get(i);
-                for (EdiMessageType type : EdiMessageType.values()) {
-                    if (!ediMappingConfigRepository
-                            .existsByPartner_IdAndMessageTypeAndExternalProductCode(partner.getId(), type, partner.getCode() + "-" + product.getSku())) {
-                        EdiMappingConfig mapping = new EdiMappingConfig();
-                        mapping.setPartner(partner);
-                        mapping.setMessageType(type);
-                        mapping.setExternalProductCode(partner.getCode() + "-" + product.getSku());
-                        mapping.setExternalUom("PCE");
-                        mapping.setInternalProduct(product);
-                        mapping.setInternalUom(product.getUnitOfMeasure());
-                        mapping.setIsActive(i % 19 != 0);
-                        ediMappingConfigRepository.save(mapping);
-                    }
+                for (EdiMessageType type : supportedTypes) {
+                    upsertDemoMapping(partner, type, product);
                 }
             }
         }
 
-        List<Operation> operations = operationRepository.findAll().stream().limit(30).toList();
+        List<Operation> operations = operationRepository.findAll();
         for (int i = 1; i <= 30; i++) {
             String messageRef = "DEMO-EDI-MSG-%04d".formatted(i);
-            if (ediMessageRepository.existsByMessageRef(messageRef)) {
-                continue;
-            }
             EdiPartner partner = partners.get(i % partners.size());
-            EdiMessageType type = i % 5 == 0 ? EdiMessageType.ORDRSP : i % 2 == 0 ? EdiMessageType.DESADV : EdiMessageType.ORDERS;
+            boolean supplier = partner.getCounterparty().getType() == CounterpartyType.SUPPLIER;
+            EdiMessageType type = i % 5 == 0
+                    ? EdiMessageType.ORDRSP
+                    : supplier ? EdiMessageType.DESADV : EdiMessageType.ORDERS;
+            EdiDirection direction = i % 5 == 0 ? EdiDirection.OUTBOUND : EdiDirection.INBOUND;
             EdiMessageStatus status = switch (i % 8) {
                 case 0 -> EdiMessageStatus.FAILED;
                 case 1 -> EdiMessageStatus.RECEIVED;
@@ -622,15 +625,18 @@ public class DemoDataInitializer implements ApplicationRunner {
                 case 3 -> EdiMessageStatus.PROCESSING;
                 default -> EdiMessageStatus.PROCESSED;
             };
-            EdiMessage message = new EdiMessage();
+            EdiMessage message = ediMessageRepository.findByMessageRef(messageRef).orElseGet(EdiMessage::new);
             message.setMessageType(type);
-            message.setDirection(i % 6 == 0 ? EdiDirection.OUTBOUND : EdiDirection.INBOUND);
+            message.setDirection(direction);
             message.setStatus(status);
             message.setInterchangeRef("UNB-DEMO-%04d".formatted(i));
             message.setMessageRef(messageRef);
             message.setDocumentNumber("EDI-DOC-%04d".formatted(7000 + i));
             message.setPartner(partner);
-            message.setRelatedOperation(status == EdiMessageStatus.PROCESSED && !operations.isEmpty() ? operations.get(i % operations.size()) : null);
+            message.setRelatedOperation(status == EdiMessageStatus.PROCESSED
+                    && direction == EdiDirection.INBOUND
+                    && type != EdiMessageType.ORDRSP
+                    ? findRelatedDemoOperation(operations, type) : null);
             message.setReceivedAt(LocalDateTime.now().minusDays(45 - i).minusMinutes(i * 7L));
             message.setProcessedAt(status == EdiMessageStatus.PROCESSED || status == EdiMessageStatus.FAILED ? message.getReceivedAt().plusMinutes(8 + i) : null);
             message.setErrorMessage(status == EdiMessageStatus.FAILED ? "Не найден активный mapping для внешнего кода товара или некорректный GLN получателя" : null);
@@ -640,6 +646,56 @@ public class DemoDataInitializer implements ApplicationRunner {
             seedQueue(saved, i, status);
             seedEdiAudit(saved, i, status);
         }
+    }
+
+    private List<EdiMessageType> supportedMappingTypes(EdiPartner partner) {
+        if (partner.getCounterparty().getType() == CounterpartyType.SUPPLIER) {
+            return List.of(EdiMessageType.DESADV, EdiMessageType.ORDRSP);
+        }
+        return List.of(EdiMessageType.ORDERS, EdiMessageType.ORDRSP);
+    }
+
+    private void deactivateUnsupportedMappings(EdiPartner partner, List<EdiMessageType> supportedTypes) {
+        ediMappingConfigRepository.findAll().stream()
+                .filter(mapping -> mapping.getPartner().getId().equals(partner.getId()))
+                .filter(mapping -> !supportedTypes.contains(mapping.getMessageType()))
+                .filter(mapping -> Boolean.TRUE.equals(mapping.getIsActive()))
+                .forEach(mapping -> {
+                    mapping.setIsActive(false);
+                    ediMappingConfigRepository.save(mapping);
+                });
+    }
+
+    private void upsertDemoMapping(EdiPartner partner, EdiMessageType type, Product product) {
+        List<EdiMappingConfig> existingMappings = ediMappingConfigRepository
+                .findAllByPartner_IdAndMessageTypeAndExternalProductCode(
+                        partner.getId(),
+                        type,
+                        partner.getCode() + "-" + product.getSku()
+                );
+        EdiMappingConfig mapping = existingMappings.isEmpty() ? new EdiMappingConfig() : existingMappings.get(0);
+        existingMappings.stream().skip(1).forEach(duplicate -> {
+            duplicate.setIsActive(false);
+            ediMappingConfigRepository.save(duplicate);
+        });
+        mapping.setPartner(partner);
+        mapping.setMessageType(type);
+        mapping.setExternalProductCode(partner.getCode() + "-" + product.getSku());
+        mapping.setExternalUom("PCE");
+        mapping.setInternalProduct(product);
+        mapping.setInternalUom(product.getUnitOfMeasure());
+        mapping.setIsActive(true);
+        ediMappingConfigRepository.save(mapping);
+    }
+
+    private Operation findRelatedDemoOperation(List<Operation> operations, EdiMessageType messageType) {
+        OperationType expectedType = messageType == EdiMessageType.DESADV ? OperationType.INCOME : OperationType.OUTCOME;
+        return operations.stream()
+                .filter(operation -> operation.getSource() == OperationSource.EDI)
+                .filter(operation -> operation.getType() == expectedType)
+                .filter(operation -> operation.getStatus() == OperationStatus.DRAFT || operation.getStatus() == OperationStatus.COMPLETED)
+                .findFirst()
+                .orElse(null);
     }
 
     private EdiPartner upsertEdiPartner(String code, String name, Counterparty counterparty, Warehouse warehouse, boolean inbound, boolean outbound) {
@@ -656,10 +712,7 @@ public class DemoDataInitializer implements ApplicationRunner {
     }
 
     private void seedQueue(EdiMessage message, int i, EdiMessageStatus messageStatus) {
-        if (ediProcessingQueueRepository.existsByEdiMessage_Id(message.getId())) {
-            return;
-        }
-        EdiProcessingQueue queue = new EdiProcessingQueue();
+        EdiProcessingQueue queue = ediProcessingQueueRepository.findByEdiMessage_Id(message.getId()).orElseGet(EdiProcessingQueue::new);
         queue.setEdiMessage(message);
         queue.setStatus(switch (messageStatus) {
             case RECEIVED, NORMALIZED -> EdiQueueStatus.PENDING;
@@ -682,6 +735,12 @@ public class DemoDataInitializer implements ApplicationRunner {
             logEntry.setEdiMessage(message);
             logEntry.setStage(stages.get(stageIndex));
             boolean failedStage = status == EdiMessageStatus.FAILED && stageIndex >= 3;
+            if (ediAuditLogRepository.existsByEdiMessage_IdAndStage(message.getId(), logEntry.getStage())) {
+                if (failedStage) {
+                    break;
+                }
+                continue;
+            }
             logEntry.setStatus(failedStage ? EdiAuditStatus.FAILED : stageIndex == 4 && status == EdiMessageStatus.RECEIVED ? EdiAuditStatus.SKIPPED : EdiAuditStatus.SUCCESS);
             logEntry.setDetails(failedStage ? "Ошибка сопоставления внешнего товара с внутренним SKU" : "Демо-аудит этапа обработки EDI сообщения");
             logEntry.setCreatedAt(message.getReceivedAt().plusMinutes(i + stageIndex));
@@ -699,28 +758,90 @@ public class DemoDataInitializer implements ApplicationRunner {
     }
 
     private String normalizedPayload(EdiMessageType type, EdiPartner partner, int i, List<Product> products) {
-        Product first = products.get(i % products.size());
-        Product second = products.get((i + 5) % products.size());
-        String fromCell = type == EdiMessageType.ORDERS ? "\"fromCellId\":null," : "";
+        int firstQuantity = 2 + i % 9;
+        int secondQuantity = 1 + i % 7;
+        Warehouse payloadWarehouse = ediPayloadWarehouse(type, partner, products, Math.max(firstQuantity, secondQuantity));
+        Product first = productForEdiLine(type, payloadWarehouse, products, i, firstQuantity);
+        Product second = productForEdiLine(type, payloadWarehouse, products, i + 5, secondQuantity);
+        String firstCell = ediCellPayload(type, payloadWarehouse, first, firstQuantity);
+        String secondCell = ediCellPayload(type, payloadWarehouse, second, secondQuantity);
         return """
-                {"documentNumber":"EDI-DOC-%04d","documentDate":"%s","partnerCode":"%s","warehouseCode":"%s","items":[{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"pcs"},{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,"unitOfMeasure":"pcs"}]}
+                {"documentNumber":"EDI-DOC-%04d","documentDate":"%s","partnerCode":"%s","warehouseId":%d,"warehouseCode":"%s","items":[{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"pcs"},{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"pcs"}]}
                 """.formatted(
                 7000 + i,
                 LocalDate.now().minusDays(i % 30),
                 partner.getCode(),
-                partner.getDefaultWarehouse().getCode(),
+                payloadWarehouse.getId(),
+                payloadWarehouse.getCode(),
                 partner.getCode(),
                 first.getSku(),
                 first.getSku(),
-                2 + i % 9,
+                firstQuantity,
                 priceFor(first, i).toPlainString(),
-                fromCell,
+                firstCell,
                 partner.getCode(),
                 second.getSku(),
                 second.getSku(),
-                1 + i % 7,
-                priceFor(second, i + 3).toPlainString()
+                secondQuantity,
+                priceFor(second, i + 3).toPlainString(),
+                secondCell
         ).trim();
+    }
+
+    private Warehouse ediPayloadWarehouse(EdiMessageType type, EdiPartner partner, List<Product> products, int quantity) {
+        if (type != EdiMessageType.ORDERS) {
+            return partner.getDefaultWarehouse();
+        }
+        boolean defaultWarehouseHasStock = products.stream().anyMatch(product -> hasAvailableStock(product, partner.getDefaultWarehouse(), quantity));
+        if (defaultWarehouseHasStock) {
+            return partner.getDefaultWarehouse();
+        }
+        return products.stream()
+                .flatMap(product -> stockBalanceRepository.findByProduct_Id(product.getId()).stream())
+                .filter(balance -> balance.getQuantity() - balance.getReservedQuantity() >= quantity)
+                .findFirst()
+                .map(balance -> balance.getCell().getWarehouse())
+                .orElse(partner.getDefaultWarehouse());
+    }
+
+    private Product productForEdiLine(EdiMessageType type, Warehouse warehouse, List<Product> products, int offset, int quantity) {
+        if (type != EdiMessageType.ORDERS) {
+            return products.get(Math.floorMod(offset, products.size()));
+        }
+        for (int index = 0; index < products.size(); index++) {
+            Product candidate = products.get(Math.floorMod(offset + index, products.size()));
+            if (hasAvailableStock(candidate, warehouse, quantity)) {
+                return candidate;
+            }
+        }
+        return products.get(Math.floorMod(offset, products.size()));
+    }
+
+    private boolean hasAvailableStock(Product product, Warehouse warehouse, int quantity) {
+        return stockBalanceRepository.findByProduct_Id(product.getId()).stream()
+                .filter(balance -> balance.getCell().getWarehouse().getId().equals(warehouse.getId()))
+                .anyMatch(balance -> balance.getQuantity() - balance.getReservedQuantity() >= quantity);
+    }
+
+    private String ediCellPayload(EdiMessageType type, Warehouse warehouse, Product product, int quantity) {
+        if (type == EdiMessageType.DESADV) {
+            Long cellId = storageCellRepository.findByWarehouse_Id(warehouse.getId()).stream()
+                    .filter(cell -> Boolean.TRUE.equals(cell.getIsActive()))
+                    .findFirst()
+                    .map(StorageCell::getId)
+                    .orElse(null);
+            return cellId == null ? "" : "\"toCellId\":" + cellId + ",";
+        }
+        if (type == EdiMessageType.ORDERS) {
+            Long cellId = stockBalanceRepository.findByProduct_Id(product.getId()).stream()
+                    .filter(balance -> balance.getCell().getWarehouse().getId().equals(warehouse.getId()))
+                    .filter(balance -> balance.getQuantity() - balance.getReservedQuantity() >= quantity)
+                    .findFirst()
+                    .map(balance -> balance.getCell().getId())
+                    .orElse(null);
+            return cellId == null ? "" : "\"fromCellId\":" + cellId + ",";
+        }
+        return "";
     }
 
     private void seedAuditTrail(Map<String, User> users) {

@@ -11,16 +11,21 @@ import {
   TableHead,
   TablePagination,
   TableRow,
+  TableSortLabel,
   Tooltip,
 } from '@mui/material';
 import { Delete, Edit, Visibility } from '@mui/icons-material';
-import type { ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { EmptyState } from '../feedback/StateViews';
+
+export type SortDirection = 'asc' | 'desc';
 
 export type Column<T> = {
   key: string;
   label: string;
   render?: (row: T) => ReactNode;
+  sortKey?: string | false;
+  sortValue?: (row: T) => unknown;
 };
 
 export function BoolChip({ value }: { value?: boolean }) {
@@ -41,7 +46,7 @@ export function FillBar({ value }: { value: number }) {
   );
 }
 
-export function ResourceTable<T extends { id?: number }>({
+export function ResourceTable<T>({
   rows,
   columns,
   total,
@@ -52,6 +57,9 @@ export function ResourceTable<T extends { id?: number }>({
   onEdit,
   onDelete,
   onView,
+  sortBy,
+  sortDirection,
+  onSortChange,
 }: {
   rows: T[];
   columns: Column<T>[];
@@ -63,20 +71,64 @@ export function ResourceTable<T extends { id?: number }>({
   onEdit?: (row: T) => void;
   onDelete?: (row: T) => void;
   onView?: (row: T) => void;
+  sortBy?: string;
+  sortDirection?: SortDirection;
+  onSortChange?: (sortBy: string, sortDirection: SortDirection) => void;
 }) {
+  const [localSort, setLocalSort] = useState<{ sortBy: string; sortDirection: SortDirection } | null>(null);
+  const activeSortBy = sortBy ?? localSort?.sortBy;
+  const activeSortDirection = sortDirection ?? localSort?.sortDirection ?? 'asc';
+  const isControlledSort = !!onSortChange;
+
+  const sortedRows = useMemo(() => {
+    if (isControlledSort || !activeSortBy) {
+      return rows;
+    }
+
+    const column = columns.find((item) => (item.sortKey ?? item.key) === activeSortBy);
+    return [...rows].sort((left, right) => compareValues(getSortValue(left, column, activeSortBy), getSortValue(right, column, activeSortBy), activeSortDirection));
+  }, [activeSortBy, activeSortDirection, columns, isControlledSort, rows]);
+
+  const handleSort = (column: Column<T>) => {
+    const nextSortBy = column.sortKey ?? column.key;
+    if (!nextSortBy) {
+      return;
+    }
+
+    const nextDirection: SortDirection = activeSortBy === nextSortBy && activeSortDirection === 'asc' ? 'desc' : 'asc';
+    if (onSortChange) {
+      onSortChange(nextSortBy, nextDirection);
+    } else {
+      setLocalSort({ sortBy: nextSortBy, sortDirection: nextDirection });
+    }
+  };
+
   return (
     <Paper variant="outlined">
       <TableContainer>
         <Table size="small">
           <TableHead>
             <TableRow>
-              {columns.map((column) => <TableCell key={column.key}>{column.label}</TableCell>)}
+              {columns.map((column) => {
+                const columnSortBy = column.sortKey ?? column.key;
+                const sortable = !!columnSortBy;
+                const active = activeSortBy === columnSortBy;
+                return (
+                  <TableCell key={column.key} sortDirection={active ? activeSortDirection : false}>
+                    {sortable ? (
+                      <TableSortLabel active={active} direction={active ? activeSortDirection : 'asc'} onClick={() => handleSort(column)}>
+                        {column.label}
+                      </TableSortLabel>
+                    ) : column.label}
+                  </TableCell>
+                );
+              })}
               {(onEdit || onDelete || onView) && <TableCell align="right">Действия</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.map((row, index) => (
-              <TableRow key={row.id ?? index} hover>
+            {sortedRows.map((row, index) => (
+              <TableRow key={getRowKey(row, index)} hover>
                 {columns.map((column) => (
                   <TableCell key={column.key}>{column.render ? column.render(row) : (row as any)[column.key] ?? '—'}</TableCell>
                 ))}
@@ -105,4 +157,55 @@ export function ResourceTable<T extends { id?: number }>({
       />
     </Paper>
   );
+}
+
+function getSortValue<T>(row: T, column: Column<T> | undefined, sortBy: string) {
+  if (column?.sortValue) {
+    return column.sortValue(row);
+  }
+
+  return getByPath(row, column?.key ?? sortBy);
+}
+
+function getByPath(row: unknown, path: string) {
+  return path.split('.').reduce<unknown>((value, key) => {
+    if (value == null || typeof value !== 'object') {
+      return undefined;
+    }
+
+    return (value as Record<string, unknown>)[key];
+  }, row);
+}
+
+function compareValues(left: unknown, right: unknown, direction: SortDirection) {
+  const multiplier = direction === 'asc' ? 1 : -1;
+
+  if (left == null && right == null) {
+    return 0;
+  }
+
+  if (left == null) {
+    return 1 * multiplier;
+  }
+
+  if (right == null) {
+    return -1 * multiplier;
+  }
+
+  const leftNumber = typeof left === 'number' ? left : Number(left);
+  const rightNumber = typeof right === 'number' ? right : Number(right);
+
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return (leftNumber - rightNumber) * multiplier;
+  }
+
+  return String(left).localeCompare(String(right), 'ru', { numeric: true, sensitivity: 'base' }) * multiplier;
+}
+
+function getRowKey(row: unknown, index: number) {
+  if (row != null && typeof row === 'object' && 'id' in row) {
+    return String((row as { id?: unknown }).id ?? index);
+  }
+
+  return index;
 }
