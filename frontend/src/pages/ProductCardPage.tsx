@@ -49,7 +49,6 @@ export function ProductCardPage() {
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 3 }}><Info title="Категория" value={product.category} /></Grid>
             <Grid size={{ xs: 12, md: 3 }}><Info title="Штрихкод" value={product.barcode} /></Grid>
-            <Grid size={{ xs: 12, md: 3 }}><Info title="Ед. измерения" value={product.unitOfMeasure} /></Grid>
             <Grid size={{ xs: 12, md: 3 }}><Info title="Габариты" value={`${product.lengthCm ?? 0} x ${product.widthCm ?? 0} x ${product.heightCm ?? 0} см`} /></Grid>
           </Grid>
         </CardContent>

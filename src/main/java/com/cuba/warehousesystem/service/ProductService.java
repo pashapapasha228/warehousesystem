@@ -127,7 +127,6 @@ public class ProductService {
         product.setBarcode(request.barcode());
         product.setName(request.name());
         product.setCategory(request.category());
-        product.setUnitOfMeasure(defaultString(request.unitOfMeasure(), "pcs"));
         product.setMinStockLevel(defaultInteger(request.minStockLevel()));
         product.setWeightPerUnitKg(defaultDecimal(request.weightPerUnitKg()));
         product.setVolumePerUnitCm3(defaultDecimal(request.volumePerUnitCm3()));
@@ -144,7 +143,6 @@ public class ProductService {
                 product.getBarcode(),
                 product.getName(),
                 product.getCategory(),
-                product.getUnitOfMeasure(),
                 product.getMinStockLevel(),
                 product.getWeightPerUnitKg(),
                 product.getVolumePerUnitCm3(),
@@ -155,10 +153,6 @@ public class ProductService {
                 product.getCreatedAt(),
                 product.getUpdatedAt()
         );
-    }
-
-    private String defaultString(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value;
     }
 
     private Integer defaultInteger(Integer value) {

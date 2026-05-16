@@ -22,7 +22,6 @@ export function ProductsPage() {
         { key: 'sku', label: 'SKU' },
         { key: 'name', label: 'Название' },
         { key: 'category', label: 'Категория' },
-        { key: 'unitOfMeasure', label: 'Ед.' },
         { key: 'minStockLevel', label: 'Мин.' },
         { key: 'isActive', label: 'Статус', render: (r) => <BoolChip value={r.isActive} /> },
       ]}
@@ -31,7 +30,6 @@ export function ProductsPage() {
         { name: 'barcode', label: 'Штрихкод' },
         { name: 'name', label: 'Название', required: true },
         { name: 'category', label: 'Категория' },
-        { name: 'unitOfMeasure', label: 'Единица измерения' },
         { name: 'minStockLevel', label: 'Минимальный остаток', type: 'number' },
         { name: 'weightPerUnitKg', label: 'Вес единицы, кг', type: 'number' },
         { name: 'volumePerUnitCm3', label: 'Объем единицы, см3', type: 'number' },

@@ -17,8 +17,7 @@ public record EdiSimulationRequest(
             Long mappingId,
             Long productId,
             String externalProductCode,
-            @NotNull @Min(1) Integer quantity,
-            String unitOfMeasure
+            @NotNull @Min(1) Integer quantity
     ) {
     }
 }

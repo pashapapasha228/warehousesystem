@@ -306,7 +306,6 @@ public class OperationService {
         item.setProduct(product);
         item.setQuantity(itemReq.quantity());
         item.setUnitPrice(itemReq.unitPrice() == null ? BigDecimal.ZERO : itemReq.unitPrice());
-        item.setUnitOfMeasure(defaultUnitOfMeasure(itemReq.unitOfMeasure(), product));
 
         if (itemReq.fromCellId() != null) {
             item.setFromCell(findCellInWarehouse(itemReq.fromCellId(), warehouse, "Source cell not found"));
@@ -515,13 +514,6 @@ public class OperationService {
         return cell;
     }
 
-    private String defaultUnitOfMeasure(String requestedUom, Product product) {
-        if (requestedUom != null && !requestedUom.isBlank()) {
-            return requestedUom;
-        }
-        return product.getUnitOfMeasure() == null ? "pcs" : product.getUnitOfMeasure();
-    }
-
     private OperationResponse completeWithQuantities(
             Operation operation,
             User completedBy,
@@ -686,7 +678,6 @@ public class OperationService {
                 item.getProduct().getName(),
                 item.getQuantity(),
                 item.getUnitPrice(),
-                item.getUnitOfMeasure(),
                 item.getFromCell() == null ? null : item.getFromCell().getId(),
                 item.getFromCell() == null ? null : item.getFromCell().getCode(),
                 item.getToCell() == null ? null : item.getToCell().getId(),

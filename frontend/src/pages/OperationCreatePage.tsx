@@ -43,7 +43,6 @@ const schema = z.object({
     productId: z.coerce.number().min(1),
     quantity: z.coerce.number().min(1),
     unitPrice: optionalNumber,
-    unitOfMeasure: z.string().optional().nullable(),
     fromCellId: optionalNumber,
     toCellId: optionalNumber,
   })).min(1),
@@ -125,7 +124,6 @@ export function OperationCreatePage() {
                 </Grid>
                 <Grid size={{ xs: 6, md: 1.5 }}><TextField fullWidth label="Кол-во" type="number" {...register(`items.${index}.quantity`)} error={!!errors.items?.[index]?.quantity} /></Grid>
                 <Grid size={{ xs: 6, md: 1.5 }}><TextField fullWidth label="Цена" type="number" {...register(`items.${index}.unitPrice`)} /></Grid>
-                <Grid size={{ xs: 6, md: 1.5 }}><TextField fullWidth label="Ед." {...register(`items.${index}.unitOfMeasure`)} /></Grid>
                 {(type === 'OUTCOME' || type === 'MOVE') && (
                   <Grid size={{ xs: 12, md: 2 }}>
                     <Controller control={control} name={`items.${index}.fromCellId`} render={({ field }) => (

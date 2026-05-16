@@ -100,7 +100,6 @@ class ReportServiceTest {
         product.setId(id);
         product.setSku(sku);
         product.setName(name);
-        product.setUnitOfMeasure("pcs");
         product.setMinStockLevel(0);
         return product;
     }

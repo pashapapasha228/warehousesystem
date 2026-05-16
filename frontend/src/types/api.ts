@@ -46,7 +46,6 @@ export type Product = {
   barcode?: string;
   name: string;
   category?: string;
-  unitOfMeasure?: string;
   minStockLevel?: number;
   weightPerUnitKg?: number;
   volumePerUnitCm3?: number;
@@ -133,7 +132,6 @@ export type OperationItem = {
   productName?: string;
   quantity: number;
   unitPrice?: number;
-  unitOfMeasure?: string;
   fromCellId?: number;
   fromCellCode?: string;
   toCellId?: number;
@@ -193,10 +191,8 @@ export type EdiMapping = {
   partnerCode?: string;
   messageType: EdiMessageType;
   externalProductCode: string;
-  externalUom?: string;
   internalProductId: number;
   internalSku?: string;
-  internalUom?: string;
   isActive?: boolean;
 };
 

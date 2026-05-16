@@ -304,15 +304,12 @@ public class EdiProcessingService {
                     throw new BadRequestException("Selected mapping does not match partner/message type.");
                 }
                 payloadItem.put("externalProductCode", mapping.getExternalProductCode());
-                payloadItem.put("unitOfMeasure", firstNonBlank(item.unitOfMeasure(), mapping.getInternalUom()));
             } else if (item.productId() != null) {
                 Product product = productRepository.findById(item.productId())
                         .orElseThrow(() -> new EntityNotFoundException("Product not found"));
                 payloadItem.put("productId", product.getId());
-                payloadItem.put("unitOfMeasure", firstNonBlank(item.unitOfMeasure(), product.getUnitOfMeasure()));
             } else if (item.externalProductCode() != null && !item.externalProductCode().isBlank()) {
                 payloadItem.put("externalProductCode", item.externalProductCode());
-                payloadItem.put("unitOfMeasure", firstNonBlank(item.unitOfMeasure(), "pcs"));
             } else {
                 throw new BadRequestException("Each simulation item requires mappingId, productId or externalProductCode.");
             }
@@ -421,17 +418,15 @@ public class EdiProcessingService {
             Long fromCellId = readLong(itemNode, "fromCellId");
             Long toCellId = readLong(itemNode, "toCellId");
             BigDecimal unitPrice = readBigDecimal(itemNode, "unitPrice");
-            String unitOfMeasure = firstNonBlank(readText(itemNode, "unitOfMeasure"), product.getUnitOfMeasure());
             List<EdiProcessRequest.CellAssignment> assignments = cellAssignments.getOrDefault(index, List.of());
 
             if (!assignments.isEmpty()) {
-                addAssignedOperationItems(items, operationType, product, totalQuantity, unitPrice, unitOfMeasure, assignments);
+                addAssignedOperationItems(items, operationType, product, totalQuantity, unitPrice, assignments);
             } else {
                 items.add(new OperationRequest.ItemRequest(
                         product.getId(),
                         totalQuantity,
                         unitPrice,
-                        unitOfMeasure,
                         fromCellId,
                         toCellId
                 ));
@@ -447,7 +442,6 @@ public class EdiProcessingService {
             Product product,
             Integer totalQuantity,
             BigDecimal unitPrice,
-            String unitOfMeasure,
             List<EdiProcessRequest.CellAssignment> assignments
     ) {
         Map<Long, Integer> quantitiesByCell = new HashMap<>();
@@ -476,7 +470,6 @@ public class EdiProcessingService {
                     product.getId(),
                     entry.getValue(),
                     unitPrice,
-                    unitOfMeasure,
                     operationType == OperationType.OUTCOME ? cellId : null,
                     operationType == OperationType.INCOME ? cellId : null
             ));

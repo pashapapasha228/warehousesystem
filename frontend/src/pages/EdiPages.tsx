@@ -17,8 +17,8 @@ import { ediMessageStatuses, ediMessageTypeLabels, ediMessageTypes, ediQueueStat
 import type { EdiMapping, EdiQueueItem, Product, StockBalance, StorageCell } from '../types/api';
 
 const inboundPayloadExamples: Record<EdiMessageType, string> = {
-  DESADV: '{\n  "warehouseId": 1,\n  "documentDate": "2026-05-14",\n  "items": [\n    {\n      "externalProductCode": "SUPPLIER-SKU-001",\n      "quantity": 5,\n      "toCellId": 1,\n      "unitPrice": 10,\n      "unitOfMeasure": "pcs"\n    }\n  ]\n}',
-  ORDERS: '{\n  "warehouseId": 1,\n  "documentDate": "2026-05-14",\n  "items": [\n    {\n      "externalProductCode": "CUSTOMER-SKU-001",\n      "quantity": 2,\n      "fromCellId": 1,\n      "unitPrice": 10,\n      "unitOfMeasure": "pcs"\n    }\n  ]\n}',
+  DESADV: '{\n  "warehouseId": 1,\n  "documentDate": "2026-05-14",\n  "items": [\n    {\n      "externalProductCode": "SUPPLIER-SKU-001",\n      "quantity": 5,\n      "toCellId": 1,\n      "unitPrice": 10\n    }\n  ]\n}',
+  ORDERS: '{\n  "warehouseId": 1,\n  "documentDate": "2026-05-14",\n  "items": [\n    {\n      "externalProductCode": "CUSTOMER-SKU-001",\n      "quantity": 2,\n      "fromCellId": 1,\n      "unitPrice": 10\n    }\n  ]\n}',
   ORDRSP: '{\n  "documentDate": "2026-05-14",\n  "items": []\n}',
 };
 
@@ -63,18 +63,14 @@ export function EdiMappingsPage() {
         { key: 'partnerCode', label: 'Партнер' },
         { key: 'messageType', label: 'Тип' },
         { key: 'externalProductCode', label: 'Внешний код' },
-        { key: 'externalUom', label: 'Внеш. ед.' },
         { key: 'internalSku', label: 'SKU' },
-        { key: 'internalUom', label: 'Внутр. ед.' },
         { key: 'isActive', label: 'Статус', render: (r) => <BoolChip value={r.isActive} /> },
       ]}
       fields={[
         { name: 'partnerId', label: 'ID партнера', type: 'number', required: true },
         { name: 'messageType', label: 'Тип сообщения', type: 'select', required: true, options: ediMessageTypes.map((v) => ({ value: v, label: ediMessageTypeLabels[v] })) },
         { name: 'externalProductCode', label: 'Внешний код товара', required: true },
-        { name: 'externalUom', label: 'Внешняя ед.' },
         { name: 'internalProductId', label: 'ID внутреннего товара', type: 'number', required: true },
-        { name: 'internalUom', label: 'Внутренняя ед.' },
         { name: 'isActive', label: 'Активно', type: 'checkbox' },
       ]}
     />
@@ -304,7 +300,6 @@ type EdiPayloadItem = {
   externalProductCode?: string | null;
   sku?: string | null;
   quantity?: number | string | null;
-  unitOfMeasure?: string | null;
 };
 
 type EdiNormalizedPayload = {
@@ -375,7 +370,7 @@ function EdiAllocationRows({
       <Stack spacing={1.5}>
         <Box display="flex" justifyContent="space-between" gap={2} flexWrap="wrap">
           <Typography fontWeight={600}>
-            {item.sku || item.externalProductCode || `productId ${item.productId}`} · {requiredQuantity} {item.unitOfMeasure || product?.unitOfMeasure || 'pcs'}
+            {item.sku || item.externalProductCode || `productId ${item.productId}`} · {requiredQuantity} шт.
           </Typography>
           <Typography color={allocationOk ? 'success.main' : 'warning.main'}>
             Распределено: {allocatedQuantity || 0} / {requiredQuantity}

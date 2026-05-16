@@ -98,7 +98,6 @@ export function OperationDetailsPage() {
           { key: 'productName', label: 'Товар' },
           { key: 'quantity', label: 'Кол-во' },
           { key: 'unitPrice', label: 'Цена' },
-          { key: 'unitOfMeasure', label: 'Ед.' },
           { key: 'fromCellCode', label: 'Из ячейки' },
           { key: 'toCellCode', label: 'В ячейку' },
         ]}

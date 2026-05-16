@@ -8,9 +8,7 @@ public record EdiMappingConfigRequest(
         @NotNull Long partnerId,
         @NotNull EdiMessageType messageType,
         @NotBlank String externalProductCode,
-        String externalUom,
         @NotNull Long internalProductId,
-        String internalUom,
         Boolean isActive
 ) {
 }

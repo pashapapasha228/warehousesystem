@@ -49,9 +49,6 @@ public class OperationItem {
     @Column(name = "unit_price", nullable = false, precision = 14, scale = 2)
     private BigDecimal unitPrice = BigDecimal.ZERO;
 
-    @Column(name = "unit_of_measure", nullable = false, length = 20)
-    private String unitOfMeasure = "pcs";
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "from_cell_id")
     @ToString.Exclude
@@ -69,9 +66,6 @@ public class OperationItem {
     void normalizeDefaults() {
         if (unitPrice == null) {
             unitPrice = BigDecimal.ZERO;
-        }
-        if (unitOfMeasure == null || unitOfMeasure.isBlank()) {
-            unitOfMeasure = product != null && product.getUnitOfMeasure() != null ? product.getUnitOfMeasure() : "pcs";
         }
     }
 }

@@ -40,15 +40,9 @@ public class EdiMappingConfig {
     @Column(name = "external_product_code", nullable = false, length = 100)
     private String externalProductCode;
 
-    @Column(name = "external_uom", length = 20)
-    private String externalUom;
-
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "internal_product_id", nullable = false)
     private Product internalProduct;
-
-    @Column(name = "internal_uom", nullable = false, length = 20)
-    private String internalUom = "pcs";
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;

@@ -11,7 +11,6 @@ public record ProductRequest(
         String barcode,
         @NotBlank String name,
         String category,
-        String unitOfMeasure,
         @Min(0) Integer minStockLevel,
         @DecimalMin("0.0") BigDecimal weightPerUnitKg,
         @DecimalMin("0.0") BigDecimal volumePerUnitCm3,

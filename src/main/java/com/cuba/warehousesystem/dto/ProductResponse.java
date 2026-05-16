@@ -9,7 +9,6 @@ public record ProductResponse(
         String barcode,
         String name,
         String category,
-        String unitOfMeasure,
         Integer minStockLevel,
         BigDecimal weightPerUnitKg,
         BigDecimal volumePerUnitCm3,

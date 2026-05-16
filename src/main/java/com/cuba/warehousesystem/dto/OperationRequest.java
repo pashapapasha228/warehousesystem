@@ -25,7 +25,6 @@ public record OperationRequest(
             @NotNull Long productId,
             @NotNull @Min(1) Integer quantity,
             BigDecimal unitPrice,
-            String unitOfMeasure,
             Long fromCellId,
             Long toCellId
     ) {

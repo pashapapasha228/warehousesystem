@@ -314,7 +314,6 @@ public class DemoDataInitializer implements ApplicationRunner {
             product.setBarcode(seed.barcode());
             product.setName(seed.name());
             product.setCategory(seed.category());
-            product.setUnitOfMeasure("шт");
             product.setMinStockLevel(seed.minStockLevel());
             product.setWeightPerUnitKg(seed.weightKg());
             product.setLengthCm(seed.lengthCm());
@@ -525,7 +524,6 @@ public class DemoDataInitializer implements ApplicationRunner {
                 item.setProduct(product);
                 item.setQuantity(quantityForOperation(product, i, itemIndex, type));
                 item.setUnitPrice(priceFor(product, i));
-                item.setUnitOfMeasure(product.getUnitOfMeasure());
 
                 List<StorageCell> warehouseCells = cellList.stream()
                         .filter(cell -> Objects.equals(cell.getWarehouse().getId(), warehouse.getId()))
@@ -557,7 +555,6 @@ public class DemoDataInitializer implements ApplicationRunner {
         operationRepository.findAll().stream()
                 .filter(operation -> operation.getOperationNumber() != null && operation.getOperationNumber().startsWith("DEMO-"))
                 .forEach(operation -> {
-                    operation.getItems().forEach(item -> item.setUnitOfMeasure("шт"));
                     if (operation.getSource() == OperationSource.EDI && operation.getExternalDocumentNumber() != null
                             && operation.getExternalDocumentNumber().startsWith("EDI-")) {
                         operation.setExternalDocumentNumber(operation.getOperationNumber());
@@ -700,9 +697,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         mapping.setPartner(partner);
         mapping.setMessageType(type);
         mapping.setExternalProductCode(partner.getCode() + "-" + product.getSku());
-        mapping.setExternalUom("шт");
         mapping.setInternalProduct(product);
-        mapping.setInternalUom("шт");
         mapping.setIsActive(true);
         ediMappingConfigRepository.save(mapping);
     }
@@ -834,7 +829,6 @@ public class DemoDataInitializer implements ApplicationRunner {
         item.setProduct(product);
         item.setQuantity(quantity);
         item.setUnitPrice(priceFor(product, 90 + chain.offset() + itemIndex));
-        item.setUnitOfMeasure("шт");
         if (chain.operationType() == OperationType.INCOME) {
             item.setToCell(activeCells.get(Math.floorMod(chain.offset() + itemIndex, activeCells.size())));
         } else {
@@ -864,7 +858,7 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     private String chainRawPayload(EdiChainSeed chain) {
         return """
-                {"syntax":"EDIFACT-DEMO","messageType":"%s","sender":"%s","documentNumber":"%s","lines":[{"externalProductCode":"%s-%s","quantity":%d,"unitOfMeasure":"шт"},{"externalProductCode":"%s-%s","quantity":%d,"unitOfMeasure":"шт"}]}
+                {"syntax":"EDIFACT-DEMO","messageType":"%s","sender":"%s","documentNumber":"%s","lines":[{"externalProductCode":"%s-%s","quantity":%d},{"externalProductCode":"%s-%s","quantity":%d}]}
                 """.formatted(
                 chain.messageType(),
                 chain.partner().getCode(),
@@ -896,10 +890,10 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     private String chainNormalizedItem(OperationItem item, EdiPartner partner) {
         String cellPayload = item.getOperation().getType() == OperationType.INCOME
-                ? "\"toCellId\":" + item.getToCell().getId() + ","
-                : "\"fromCellId\":" + item.getFromCell().getId() + ",";
+                ? ",\"toCellId\":" + item.getToCell().getId()
+                : ",\"fromCellId\":" + item.getFromCell().getId();
         return """
-                {"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"шт"}
+                {"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s%s}
                 """.formatted(
                 partner.getCode(),
                 item.getProduct().getSku(),
@@ -981,7 +975,7 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     private String rawPayload(EdiMessageType type, EdiPartner partner, int i, String documentNumber) {
         return """
-                {"syntax":"EDIFACT-DEMO","messageType":"%s","sender":"%s","documentNumber":"%s","lines":[{"externalProductCode":"%s-SKU-%02d","quantity":%d,"unitOfMeasure":"шт"}]}
+                {"syntax":"EDIFACT-DEMO","messageType":"%s","sender":"%s","documentNumber":"%s","lines":[{"externalProductCode":"%s-SKU-%02d","quantity":%d}]}
                 """.formatted(type, partner.getCode(), documentNumber, partner.getCode(), i % 20, 3 + i % 14).trim();
     }
 
@@ -994,7 +988,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         String firstCell = ediCellPayload(type, payloadWarehouse, first, firstQuantity);
         String secondCell = ediCellPayload(type, payloadWarehouse, second, secondQuantity);
         return """
-                {"documentNumber":"%s","documentDate":"%s","partnerCode":"%s","warehouseId":%d,"warehouseCode":"%s","items":[{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"шт"},{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"шт"}]}
+                {"documentNumber":"%s","documentDate":"%s","partnerCode":"%s","warehouseId":%d,"warehouseCode":"%s","items":[{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s%s},{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s%s}]}
                 """.formatted(
                 documentNumber,
                 LocalDate.now().minusDays(i % 30),
@@ -1058,7 +1052,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                     .findFirst()
                     .map(StorageCell::getId)
                     .orElse(null);
-            return cellId == null ? "" : "\"toCellId\":" + cellId + ",";
+            return cellId == null ? "" : ",\"toCellId\":" + cellId;
         }
         if (type == EdiMessageType.ORDERS) {
             Long cellId = stockBalanceRepository.findByProduct_Id(product.getId()).stream()
@@ -1067,7 +1061,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                     .findFirst()
                     .map(balance -> balance.getCell().getId())
                     .orElse(null);
-            return cellId == null ? "" : "\"fromCellId\":" + cellId + ",";
+            return cellId == null ? "" : ",\"fromCellId\":" + cellId;
         }
         return "";
     }

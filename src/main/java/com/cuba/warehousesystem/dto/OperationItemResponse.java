@@ -9,7 +9,6 @@ public record OperationItemResponse(
         String productName,
         Integer quantity,
         BigDecimal unitPrice,
-        String unitOfMeasure,
         Long fromCellId,
         String fromCellCode,
         Long toCellId,

@@ -61,11 +61,7 @@ public class EdiMappingConfigService {
         mapping.setPartner(partner);
         mapping.setMessageType(request.messageType());
         mapping.setExternalProductCode(request.externalProductCode());
-        mapping.setExternalUom(request.externalUom());
         mapping.setInternalProduct(product);
-        mapping.setInternalUom(request.internalUom() == null || request.internalUom().isBlank()
-                ? product.getUnitOfMeasure()
-                : request.internalUom());
         mapping.setIsActive(request.isActive() == null || request.isActive());
     }
 
@@ -81,10 +77,8 @@ public class EdiMappingConfigService {
                 mapping.getPartner().getCode(),
                 mapping.getMessageType(),
                 mapping.getExternalProductCode(),
-                mapping.getExternalUom(),
                 mapping.getInternalProduct().getId(),
                 mapping.getInternalProduct().getSku(),
-                mapping.getInternalUom(),
                 mapping.getIsActive(),
                 mapping.getCreatedAt(),
                 mapping.getUpdatedAt()

@@ -39,9 +39,6 @@ public class Product {
     @Column(length = 100)
     private String category;
 
-    @Column(name = "unit_of_measure", nullable = false, length = 20)
-    private String unitOfMeasure = "pcs";
-
     @Column(name = "min_stock_level", nullable = false)
     private Integer minStockLevel = 0;
 
@@ -84,9 +81,6 @@ public class Product {
     }
 
     private void normalizeDefaults() {
-        if (unitOfMeasure == null || unitOfMeasure.isBlank()) {
-            unitOfMeasure = "pcs";
-        }
         if (minStockLevel == null) {
             minStockLevel = 0;
         }

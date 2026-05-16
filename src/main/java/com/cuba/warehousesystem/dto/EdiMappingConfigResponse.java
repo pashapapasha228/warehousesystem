@@ -10,10 +10,8 @@ public record EdiMappingConfigResponse(
         String partnerCode,
         EdiMessageType messageType,
         String externalProductCode,
-        String externalUom,
         Long internalProductId,
         String internalSku,
-        String internalUom,
         Boolean isActive,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

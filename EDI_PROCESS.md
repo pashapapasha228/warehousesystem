@@ -22,8 +22,7 @@ Unsupported combinations fail processing with a clear error. Examples: supplier 
       "externalProductCode": "SUPPLIER-SKU-001",
       "quantity": 5,
       "toCellId": 1,
-      "unitPrice": 10.0,
-      "unitOfMeasure": "шт"
+      "unitPrice": 10.0
     }
   ]
 }
@@ -41,8 +40,7 @@ Unsupported combinations fail processing with a clear error. Examples: supplier 
       "externalProductCode": "CUSTOMER-SKU-001",
       "quantity": 2,
       "fromCellId": 1,
-      "unitPrice": 10.0,
-      "unitOfMeasure": "шт"
+      "unitPrice": 10.0
     }
   ]
 }

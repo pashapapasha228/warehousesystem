@@ -13,7 +13,6 @@ type SimulatorLine = {
   mappingId?: number | '';
   productId?: number | '';
   quantity: number;
-  unitOfMeasure?: string;
 };
 
 type SimulatorForm = {
@@ -62,7 +61,6 @@ export function EdiSimulatorPage() {
           mappingId: item.source === 'mapping' && item.mappingId ? Number(item.mappingId) : null,
           productId: item.source === 'productId' && item.productId ? Number(item.productId) : null,
           quantity: Number(item.quantity),
-          unitOfMeasure: item.unitOfMeasure || null,
         })),
       };
       return data.actor === 'supplier' ? ediApi.simulateSupplier(body) : ediApi.simulateCustomer(body);
@@ -148,7 +146,6 @@ export function EdiSimulatorPage() {
                       </Grid>
                     )}
                     <Grid size={{ xs: 6, md: 2 }}><TextField fullWidth label="Количество" type="number" {...register(`items.${index}.quantity`, { valueAsNumber: true })} /></Grid>
-                    <Grid size={{ xs: 6, md: 2 }}><TextField fullWidth label="Ед." {...register(`items.${index}.unitOfMeasure`)} /></Grid>
                     <Grid size={{ xs: 12, md: 1 }}><IconButton color="error" onClick={() => lines.remove(index)}><Delete /></IconButton></Grid>
                   </Grid>
                 );

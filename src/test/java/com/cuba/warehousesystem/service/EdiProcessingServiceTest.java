@@ -236,7 +236,7 @@ class EdiProcessingServiceTest {
                   "warehouseId": 500,
                   "documentDate": "2026-05-14",
                   "items": [
-                    {"externalProductCode": "EXT-1", "quantity": 2, %s "unitPrice": 10.00, "unitOfMeasure": "pcs"}
+                    {"externalProductCode": "EXT-1", "quantity": 2, %s "unitPrice": 10.00}
                   ]
                 }
                 """.formatted(cellField);
@@ -304,7 +304,6 @@ class EdiProcessingServiceTest {
         product.setId(1000L);
         product.setSku("SKU-1");
         product.setName("Product 1");
-        product.setUnitOfMeasure("pcs");
         product.setWeightPerUnitKg(BigDecimal.ONE);
         product.setVolumePerUnitCm3(BigDecimal.ONE);
         product.setLengthCm(BigDecimal.ONE);

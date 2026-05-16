@@ -94,7 +94,6 @@ class OperationServiceTest {
         product.setId(1L);
         product.setSku("SKU-1");
         product.setName("Test product");
-        product.setUnitOfMeasure("pcs");
         product.setWeightPerUnitKg(BigDecimal.ONE);
         product.setVolumePerUnitCm3(BigDecimal.ONE);
         product.setLengthCm(BigDecimal.ONE);
