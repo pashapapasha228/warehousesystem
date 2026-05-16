@@ -3,6 +3,9 @@ package com.cuba.warehousesystem.bootstrap;
 import com.cuba.warehousesystem.model.AuditLog;
 import com.cuba.warehousesystem.model.Counterparty;
 import com.cuba.warehousesystem.model.CounterpartyType;
+import com.cuba.warehousesystem.model.DocumentExecutionStage;
+import com.cuba.warehousesystem.model.DocumentExecutionStatus;
+import com.cuba.warehousesystem.model.DocumentExecutionStep;
 import com.cuba.warehousesystem.model.EdiAuditLog;
 import com.cuba.warehousesystem.model.EdiAuditStatus;
 import com.cuba.warehousesystem.model.EdiDirection;
@@ -26,6 +29,7 @@ import com.cuba.warehousesystem.model.UserRole;
 import com.cuba.warehousesystem.model.Warehouse;
 import com.cuba.warehousesystem.repository.AuditLogRepository;
 import com.cuba.warehousesystem.repository.CounterpartyRepository;
+import com.cuba.warehousesystem.repository.DocumentExecutionStepRepository;
 import com.cuba.warehousesystem.repository.EdiAuditLogRepository;
 import com.cuba.warehousesystem.repository.EdiMappingConfigRepository;
 import com.cuba.warehousesystem.repository.EdiMessageRepository;
@@ -83,6 +87,7 @@ public class DemoDataInitializer implements ApplicationRunner {
     private final EdiMessageRepository ediMessageRepository;
     private final EdiProcessingQueueRepository ediProcessingQueueRepository;
     private final EdiAuditLogRepository ediAuditLogRepository;
+    private final DocumentExecutionStepRepository documentExecutionStepRepository;
     private final AuditLogRepository auditLogRepository;
     private final PasswordEncoder passwordEncoder;
 
@@ -309,7 +314,7 @@ public class DemoDataInitializer implements ApplicationRunner {
             product.setBarcode(seed.barcode());
             product.setName(seed.name());
             product.setCategory(seed.category());
-            product.setUnitOfMeasure("pcs");
+            product.setUnitOfMeasure("шт");
             product.setMinStockLevel(seed.minStockLevel());
             product.setWeightPerUnitKg(seed.weightKg());
             product.setLengthCm(seed.lengthCm());
@@ -549,6 +554,16 @@ public class DemoDataInitializer implements ApplicationRunner {
                     operation.setSource(OperationSource.MANUAL);
                     operationRepository.save(operation);
                 });
+        operationRepository.findAll().stream()
+                .filter(operation -> operation.getOperationNumber() != null && operation.getOperationNumber().startsWith("DEMO-"))
+                .forEach(operation -> {
+                    operation.getItems().forEach(item -> item.setUnitOfMeasure("шт"));
+                    if (operation.getSource() == OperationSource.EDI && operation.getExternalDocumentNumber() != null
+                            && operation.getExternalDocumentNumber().startsWith("EDI-")) {
+                        operation.setExternalDocumentNumber(operation.getOperationNumber());
+                    }
+                    operationRepository.save(operation);
+                });
     }
 
     private String commentFor(OperationType type, OperationStatus status, int i) {
@@ -609,7 +624,7 @@ public class DemoDataInitializer implements ApplicationRunner {
             }
         }
 
-        List<Operation> operations = operationRepository.findAll();
+        seedGrdEdiChains(warehouses.get("GRD-REG"), products, counterparties);
         for (int i = 1; i <= 30; i++) {
             String messageRef = "DEMO-EDI-MSG-%04d".formatted(i);
             EdiPartner partner = partners.get(i % partners.size());
@@ -625,23 +640,27 @@ public class DemoDataInitializer implements ApplicationRunner {
                 case 3 -> EdiMessageStatus.PROCESSING;
                 default -> EdiMessageStatus.PROCESSED;
             };
+            Operation relatedOperation = status == EdiMessageStatus.PROCESSED
+                    && direction == EdiDirection.INBOUND
+                    && type != EdiMessageType.ORDRSP
+                    ? findRelatedDemoOperation(type, partner) : null;
+            String documentNumber = relatedOperation == null
+                    ? "EDI-DOC-%04d".formatted(7000 + i)
+                    : relatedOperation.getExternalDocumentNumber();
             EdiMessage message = ediMessageRepository.findByMessageRef(messageRef).orElseGet(EdiMessage::new);
             message.setMessageType(type);
             message.setDirection(direction);
             message.setStatus(status);
             message.setInterchangeRef("UNB-DEMO-%04d".formatted(i));
             message.setMessageRef(messageRef);
-            message.setDocumentNumber("EDI-DOC-%04d".formatted(7000 + i));
+            message.setDocumentNumber(documentNumber);
             message.setPartner(partner);
-            message.setRelatedOperation(status == EdiMessageStatus.PROCESSED
-                    && direction == EdiDirection.INBOUND
-                    && type != EdiMessageType.ORDRSP
-                    ? findRelatedDemoOperation(operations, type) : null);
+            message.setRelatedOperation(relatedOperation);
             message.setReceivedAt(LocalDateTime.now().minusDays(45 - i).minusMinutes(i * 7L));
             message.setProcessedAt(status == EdiMessageStatus.PROCESSED || status == EdiMessageStatus.FAILED ? message.getReceivedAt().plusMinutes(8 + i) : null);
             message.setErrorMessage(status == EdiMessageStatus.FAILED ? "Не найден активный mapping для внешнего кода товара или некорректный GLN получателя" : null);
-            message.setRawPayload(rawPayload(type, partner, i));
-            message.setNormalizedPayload(normalizedPayload(type, partner, i, mappedProducts));
+            message.setRawPayload(rawPayload(type, partner, i, documentNumber));
+            message.setNormalizedPayload(normalizedPayload(type, partner, i, documentNumber, mappedProducts));
             EdiMessage saved = ediMessageRepository.save(message);
             seedQueue(saved, i, status);
             seedEdiAudit(saved, i, status);
@@ -681,19 +700,22 @@ public class DemoDataInitializer implements ApplicationRunner {
         mapping.setPartner(partner);
         mapping.setMessageType(type);
         mapping.setExternalProductCode(partner.getCode() + "-" + product.getSku());
-        mapping.setExternalUom("PCE");
+        mapping.setExternalUom("шт");
         mapping.setInternalProduct(product);
-        mapping.setInternalUom(product.getUnitOfMeasure());
+        mapping.setInternalUom("шт");
         mapping.setIsActive(true);
         ediMappingConfigRepository.save(mapping);
     }
 
-    private Operation findRelatedDemoOperation(List<Operation> operations, EdiMessageType messageType) {
+    private Operation findRelatedDemoOperation(EdiMessageType messageType, EdiPartner partner) {
         OperationType expectedType = messageType == EdiMessageType.DESADV ? OperationType.INCOME : OperationType.OUTCOME;
-        return operations.stream()
+        return operationRepository.findAll().stream()
                 .filter(operation -> operation.getSource() == OperationSource.EDI)
                 .filter(operation -> operation.getType() == expectedType)
+                .filter(operation -> operation.getCounterparty() != null)
+                .filter(operation -> operation.getCounterparty().getId().equals(partner.getCounterparty().getId()))
                 .filter(operation -> operation.getStatus() == OperationStatus.DRAFT || operation.getStatus() == OperationStatus.COMPLETED)
+                .filter(operation -> operation.getExternalDocumentNumber() != null)
                 .findFirst()
                 .orElse(null);
     }
@@ -709,6 +731,212 @@ public class DemoDataInitializer implements ApplicationRunner {
         partner.setOutboundEnabled(outbound);
         partner.setIsActive(true);
         return ediPartnerRepository.save(partner);
+    }
+
+    private void seedGrdEdiChains(
+            Warehouse warehouse,
+            Map<String, Product> products,
+            Map<String, Counterparty> counterparties
+    ) {
+        EdiPartner supplier = upsertEdiPartner("EDI-NETPRO", "NetPro Distribution EDI", counterparties.get("SUP-NETPRO"), warehouse, true, false);
+        EdiPartner firstCustomer = upsertEdiPartner("EDI-GRODNO-MALL", "Grodno Mall EDI", counterparties.get("CUS-GRODNO-MALL"), warehouse, true, true);
+        EdiPartner secondCustomer = upsertEdiPartner("EDI-REGIONPLUS", "RegionPlus EDI", counterparties.get("CUS-REGIONPLUS"), warehouse, true, true);
+
+        List<Product> productList = products.values().stream().toList();
+        List<StockBalance> availableBalances = stockBalanceRepository.findByCell_Warehouse_Id(warehouse.getId()).stream()
+                .filter(balance -> balance.getQuantity() - balance.getReservedQuantity() >= 4)
+                .sorted(Comparator.comparing(balance -> balance.getProduct().getSku()))
+                .toList();
+        if (availableBalances.size() < 4 || productList.size() < 4) {
+            return;
+        }
+
+        List<EdiChainSeed> chains = List.of(
+                new EdiChainSeed("DEMO-GRD-DESADV-8101", EdiMessageType.DESADV, supplier, OperationType.INCOME,
+                        productList.get(0), productList.get(1), null, null, 8, 5, 1),
+                new EdiChainSeed("DEMO-GRD-DESADV-8102", EdiMessageType.DESADV, supplier, OperationType.INCOME,
+                        productList.get(2), productList.get(3), null, null, 6, 4, 2),
+                new EdiChainSeed("DEMO-GRD-ORDERS-8201", EdiMessageType.ORDERS, firstCustomer, OperationType.OUTCOME,
+                        availableBalances.get(0).getProduct(), availableBalances.get(1).getProduct(),
+                        availableBalances.get(0), availableBalances.get(1), 4, 4, 3),
+                new EdiChainSeed("DEMO-GRD-ORDERS-8202", EdiMessageType.ORDERS, secondCustomer, OperationType.OUTCOME,
+                        availableBalances.get(2).getProduct(), availableBalances.get(3).getProduct(),
+                        availableBalances.get(2), availableBalances.get(3), 4, 4, 4)
+        );
+
+        User createdBy = userRepository.findByUsername("warehouse_manager")
+                .orElseGet(() -> userRepository.findByUsername("manager").orElseThrow());
+        User completedBy = userRepository.findByUsername("warehouse_worker_1")
+                .orElseGet(() -> userRepository.findByUsername("storekeeper").orElseThrow());
+        List<StorageCell> activeCells = storageCellRepository.findByWarehouse_Id(warehouse.getId()).stream()
+                .filter(cell -> Boolean.TRUE.equals(cell.getIsActive()))
+                .sorted(Comparator.comparing(StorageCell::getCode))
+                .toList();
+        LocalDate baseDate = LocalDate.now().minusDays(10);
+        LocalDateTime baseTime = LocalDateTime.now().minusDays(10);
+
+        for (EdiChainSeed chain : chains) {
+            upsertDemoMapping(chain.partner(), chain.messageType(), chain.firstProduct());
+            upsertDemoMapping(chain.partner(), chain.messageType(), chain.secondProduct());
+            upsertDemoMapping(chain.partner(), EdiMessageType.ORDRSP, chain.firstProduct());
+            upsertDemoMapping(chain.partner(), EdiMessageType.ORDRSP, chain.secondProduct());
+
+            Operation operation = upsertChainOperation(chain, warehouse, createdBy, completedBy, activeCells, baseDate, baseTime);
+            EdiMessage message = upsertChainMessage(chain, operation, baseTime);
+            seedQueue(message, 80 + chain.offset(), EdiMessageStatus.PROCESSED);
+            seedEdiAudit(message, 80 + chain.offset(), EdiMessageStatus.PROCESSED);
+            seedExecutionChain(operation, message);
+        }
+    }
+
+    private Operation upsertChainOperation(
+            EdiChainSeed chain,
+            Warehouse warehouse,
+            User createdBy,
+            User completedBy,
+            List<StorageCell> activeCells,
+            LocalDate baseDate,
+            LocalDateTime baseTime
+    ) {
+        Operation operation = operationRepository.findAll().stream()
+                .filter(existing -> chain.documentNumber().equals(existing.getOperationNumber()))
+                .findFirst()
+                .orElseGet(Operation::new);
+        operation.setOperationNumber(chain.documentNumber());
+        operation.setType(chain.operationType());
+        operation.setStatus(OperationStatus.COMPLETED);
+        operation.setSource(OperationSource.EDI);
+        operation.setWarehouse(warehouse);
+        operation.setCounterparty(chain.partner().getCounterparty());
+        operation.setExternalDocumentNumber(chain.documentNumber());
+        operation.setDocumentDate(baseDate.plusDays(chain.offset()));
+        operation.setCreatedBy(createdBy);
+        operation.setCompletedBy(completedBy);
+        operation.setComment("Full inbound EDI chain demo for " + chain.messageType());
+        operation.setCreatedAt(baseTime.plusDays(chain.offset()));
+        operation.setCompletedAt(operation.getCreatedAt().plusHours(3));
+        operation.getItems().clear();
+        operation.getItems().add(chainItem(operation, chain.firstProduct(), chain.firstQuantity(), chain, activeCells, 0));
+        operation.getItems().add(chainItem(operation, chain.secondProduct(), chain.secondQuantity(), chain, activeCells, 1));
+        return operationRepository.save(operation);
+    }
+
+    private OperationItem chainItem(
+            Operation operation,
+            Product product,
+            int quantity,
+            EdiChainSeed chain,
+            List<StorageCell> activeCells,
+            int itemIndex
+    ) {
+        OperationItem item = new OperationItem();
+        item.setOperation(operation);
+        item.setProduct(product);
+        item.setQuantity(quantity);
+        item.setUnitPrice(priceFor(product, 90 + chain.offset() + itemIndex));
+        item.setUnitOfMeasure("шт");
+        if (chain.operationType() == OperationType.INCOME) {
+            item.setToCell(activeCells.get(Math.floorMod(chain.offset() + itemIndex, activeCells.size())));
+        } else {
+            item.setFromCell(itemIndex == 0 ? chain.firstBalance().getCell() : chain.secondBalance().getCell());
+        }
+        return item;
+    }
+
+    private EdiMessage upsertChainMessage(EdiChainSeed chain, Operation operation, LocalDateTime baseTime) {
+        String messageRef = chain.documentNumber() + "-MSG";
+        EdiMessage message = ediMessageRepository.findByMessageRef(messageRef).orElseGet(EdiMessage::new);
+        message.setMessageType(chain.messageType());
+        message.setDirection(EdiDirection.INBOUND);
+        message.setStatus(EdiMessageStatus.PROCESSED);
+        message.setInterchangeRef(chain.documentNumber() + "-UNB");
+        message.setMessageRef(messageRef);
+        message.setDocumentNumber(chain.documentNumber());
+        message.setPartner(chain.partner());
+        message.setRelatedOperation(operation);
+        message.setReceivedAt(baseTime.plusDays(chain.offset()).minusMinutes(45));
+        message.setProcessedAt(baseTime.plusDays(chain.offset()).minusMinutes(20));
+        message.setErrorMessage(null);
+        message.setRawPayload(chainRawPayload(chain));
+        message.setNormalizedPayload(chainNormalizedPayload(operation, chain.partner()));
+        return ediMessageRepository.save(message);
+    }
+
+    private String chainRawPayload(EdiChainSeed chain) {
+        return """
+                {"syntax":"EDIFACT-DEMO","messageType":"%s","sender":"%s","documentNumber":"%s","lines":[{"externalProductCode":"%s-%s","quantity":%d,"unitOfMeasure":"шт"},{"externalProductCode":"%s-%s","quantity":%d,"unitOfMeasure":"шт"}]}
+                """.formatted(
+                chain.messageType(),
+                chain.partner().getCode(),
+                chain.documentNumber(),
+                chain.partner().getCode(),
+                chain.firstProduct().getSku(),
+                chain.firstQuantity(),
+                chain.partner().getCode(),
+                chain.secondProduct().getSku(),
+                chain.secondQuantity()
+        ).trim();
+    }
+
+    private String chainNormalizedPayload(Operation operation, EdiPartner partner) {
+        OperationItem first = operation.getItems().get(0);
+        OperationItem second = operation.getItems().get(1);
+        return """
+                {"documentNumber":"%s","documentDate":"%s","partnerCode":"%s","warehouseId":%d,"warehouseCode":"%s","items":[%s,%s]}
+                """.formatted(
+                operation.getExternalDocumentNumber(),
+                operation.getDocumentDate(),
+                partner.getCode(),
+                operation.getWarehouse().getId(),
+                operation.getWarehouse().getCode(),
+                chainNormalizedItem(first, partner),
+                chainNormalizedItem(second, partner)
+        ).trim();
+    }
+
+    private String chainNormalizedItem(OperationItem item, EdiPartner partner) {
+        String cellPayload = item.getOperation().getType() == OperationType.INCOME
+                ? "\"toCellId\":" + item.getToCell().getId() + ","
+                : "\"fromCellId\":" + item.getFromCell().getId() + ",";
+        return """
+                {"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"шт"}
+                """.formatted(
+                partner.getCode(),
+                item.getProduct().getSku(),
+                item.getProduct().getSku(),
+                item.getQuantity(),
+                item.getUnitPrice().toPlainString(),
+                cellPayload
+        ).trim();
+    }
+
+    private void seedExecutionChain(Operation operation, EdiMessage message) {
+        upsertExecutionStep(operation, message, DocumentExecutionStage.EDI_RECEIVED, message.getReceivedAt(), "Inbound EDI document received");
+        upsertExecutionStep(operation, message, DocumentExecutionStage.DRAFT_CREATED, operation.getCreatedAt(), "Draft operation created from EDI document");
+        upsertExecutionStep(operation, message, DocumentExecutionStage.FACT_CHECK, operation.getCreatedAt().plusHours(1), "Fact check accepted");
+        upsertExecutionStep(operation, message, DocumentExecutionStage.STOCK_POSTED, operation.getCompletedAt().minusMinutes(15), "Stock movement posted");
+        upsertExecutionStep(operation, message, DocumentExecutionStage.COMPLETED, operation.getCompletedAt(), "EDI operation completed");
+    }
+
+    private void upsertExecutionStep(
+            Operation operation,
+            EdiMessage message,
+            DocumentExecutionStage stage,
+            LocalDateTime createdAt,
+            String details
+    ) {
+        DocumentExecutionStep step = documentExecutionStepRepository.findByOperation_IdOrderByCreatedAtAsc(operation.getId()).stream()
+                .filter(existing -> existing.getStage() == stage)
+                .findFirst()
+                .orElseGet(DocumentExecutionStep::new);
+        step.setOperation(operation);
+        step.setEdiMessage(message);
+        step.setStage(stage);
+        step.setStatus(DocumentExecutionStatus.DONE);
+        step.setDetails(details);
+        step.setCreatedBy("demo-seed");
+        step.setCreatedAt(createdAt);
+        documentExecutionStepRepository.save(step);
     }
 
     private void seedQueue(EdiMessage message, int i, EdiMessageStatus messageStatus) {
@@ -751,13 +979,13 @@ public class DemoDataInitializer implements ApplicationRunner {
         }
     }
 
-    private String rawPayload(EdiMessageType type, EdiPartner partner, int i) {
+    private String rawPayload(EdiMessageType type, EdiPartner partner, int i, String documentNumber) {
         return """
-                {"syntax":"EDIFACT-DEMO","messageType":"%s","sender":"%s","documentNumber":"EDI-DOC-%04d","lines":[{"externalProductCode":"%s-SKU-%02d","quantity":%d}]}
-                """.formatted(type, partner.getCode(), 7000 + i, partner.getCode(), i % 20, 3 + i % 14).trim();
+                {"syntax":"EDIFACT-DEMO","messageType":"%s","sender":"%s","documentNumber":"%s","lines":[{"externalProductCode":"%s-SKU-%02d","quantity":%d,"unitOfMeasure":"шт"}]}
+                """.formatted(type, partner.getCode(), documentNumber, partner.getCode(), i % 20, 3 + i % 14).trim();
     }
 
-    private String normalizedPayload(EdiMessageType type, EdiPartner partner, int i, List<Product> products) {
+    private String normalizedPayload(EdiMessageType type, EdiPartner partner, int i, String documentNumber, List<Product> products) {
         int firstQuantity = 2 + i % 9;
         int secondQuantity = 1 + i % 7;
         Warehouse payloadWarehouse = ediPayloadWarehouse(type, partner, products, Math.max(firstQuantity, secondQuantity));
@@ -766,9 +994,9 @@ public class DemoDataInitializer implements ApplicationRunner {
         String firstCell = ediCellPayload(type, payloadWarehouse, first, firstQuantity);
         String secondCell = ediCellPayload(type, payloadWarehouse, second, secondQuantity);
         return """
-                {"documentNumber":"EDI-DOC-%04d","documentDate":"%s","partnerCode":"%s","warehouseId":%d,"warehouseCode":"%s","items":[{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"pcs"},{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"pcs"}]}
+                {"documentNumber":"%s","documentDate":"%s","partnerCode":"%s","warehouseId":%d,"warehouseCode":"%s","items":[{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"шт"},{"externalProductCode":"%s-%s","sku":"%s","quantity":%d,"unitPrice":%s,%s"unitOfMeasure":"шт"}]}
                 """.formatted(
-                7000 + i,
+                documentNumber,
                 LocalDate.now().minusDays(i % 30),
                 partner.getCode(),
                 payloadWarehouse.getId(),
@@ -908,6 +1136,21 @@ public class DemoDataInitializer implements ApplicationRunner {
             String phone,
             String address,
             String contactInfo
+    ) {
+    }
+
+    private record EdiChainSeed(
+            String documentNumber,
+            EdiMessageType messageType,
+            EdiPartner partner,
+            OperationType operationType,
+            Product firstProduct,
+            Product secondProduct,
+            StockBalance firstBalance,
+            StockBalance secondBalance,
+            int firstQuantity,
+            int secondQuantity,
+            int offset
     ) {
     }
 

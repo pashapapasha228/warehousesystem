@@ -32,30 +32,30 @@ export function ProductCardPage() {
           <Typography variant="h4">{product.sku}</Typography>
           <Typography color="text.secondary">{product.name}</Typography>
         </Box>
-        <Chip label={selectedWarehouse ? selectedWarehouse.code : 'All warehouses'} />
-        <Button onClick={() => navigate('/products')}>Back</Button>
+        <Chip label={selectedWarehouse ? selectedWarehouse.code : 'Все склады'} />
+        <Button onClick={() => navigate('/products')}>Назад</Button>
       </Box>
 
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 3 }}><Metric title="Total" value={card.totalQuantity} /></Grid>
-        <Grid size={{ xs: 12, md: 3 }}><Metric title="Available" value={card.totalAvailableQuantity} /></Grid>
-        <Grid size={{ xs: 12, md: 3 }}><Metric title="Reserved" value={card.totalReservedQuantity} /></Grid>
-        <Grid size={{ xs: 12, md: 3 }}><Metric title="Min level" value={product.minStockLevel ?? 0} /></Grid>
+        <Grid size={{ xs: 12, md: 3 }}><Metric title="Всего" value={card.totalQuantity} /></Grid>
+        <Grid size={{ xs: 12, md: 3 }}><Metric title="Доступно" value={card.totalAvailableQuantity} /></Grid>
+        <Grid size={{ xs: 12, md: 3 }}><Metric title="В резерве" value={card.totalReservedQuantity} /></Grid>
+        <Grid size={{ xs: 12, md: 3 }}><Metric title="Минимальный остаток" value={product.minStockLevel ?? 0} /></Grid>
       </Grid>
 
       <Card>
         <CardContent>
-          <Typography variant="h6" gutterBottom>Main information</Typography>
+          <Typography variant="h6" gutterBottom>Основная информация</Typography>
           <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 3 }}><Info title="Category" value={product.category} /></Grid>
-            <Grid size={{ xs: 12, md: 3 }}><Info title="Barcode" value={product.barcode} /></Grid>
-            <Grid size={{ xs: 12, md: 3 }}><Info title="Unit" value={product.unitOfMeasure} /></Grid>
-            <Grid size={{ xs: 12, md: 3 }}><Info title="Dimensions" value={`${product.lengthCm ?? 0} x ${product.widthCm ?? 0} x ${product.heightCm ?? 0} cm`} /></Grid>
+            <Grid size={{ xs: 12, md: 3 }}><Info title="Категория" value={product.category} /></Grid>
+            <Grid size={{ xs: 12, md: 3 }}><Info title="Штрихкод" value={product.barcode} /></Grid>
+            <Grid size={{ xs: 12, md: 3 }}><Info title="Ед. измерения" value={product.unitOfMeasure} /></Grid>
+            <Grid size={{ xs: 12, md: 3 }}><Info title="Габариты" value={`${product.lengthCm ?? 0} x ${product.widthCm ?? 0} x ${product.heightCm ?? 0} см`} /></Grid>
           </Grid>
         </CardContent>
       </Card>
 
-      <Typography variant="h6">Warehouse aggregate</Typography>
+      <Typography variant="h6">Агрегат по складам</Typography>
       <ResourceTable
         rows={card.warehouseAggregates}
         total={card.warehouseAggregates.length}
@@ -64,14 +64,14 @@ export function ProductCardPage() {
         onPageChange={() => undefined}
         onSizeChange={() => undefined}
         columns={[
-          { key: 'warehouseCode', label: 'Warehouse' },
-          { key: 'quantity', label: 'Total' },
-          { key: 'reservedQuantity', label: 'Reserved' },
-          { key: 'availableQuantity', label: 'Available' },
+          { key: 'warehouseCode', label: 'Склад' },
+          { key: 'quantity', label: 'Всего' },
+          { key: 'reservedQuantity', label: 'В резерве' },
+          { key: 'availableQuantity', label: 'Доступно' },
         ]}
       />
 
-      <Typography variant="h6">Placements</Typography>
+      <Typography variant="h6">Размещение по ячейкам</Typography>
       <ResourceTable
         rows={card.placements}
         total={card.placements.length}
@@ -80,15 +80,15 @@ export function ProductCardPage() {
         onPageChange={() => undefined}
         onSizeChange={() => undefined}
         columns={[
-          { key: 'warehouseCode', label: 'Warehouse' },
-          { key: 'cellCode', label: 'Cell' },
-          { key: 'quantity', label: 'Total' },
-          { key: 'reservedQuantity', label: 'Reserved' },
-          { key: 'availableQuantity', label: 'Available' },
+          { key: 'warehouseCode', label: 'Склад' },
+          { key: 'cellCode', label: 'Ячейка' },
+          { key: 'quantity', label: 'Всего' },
+          { key: 'reservedQuantity', label: 'В резерве' },
+          { key: 'availableQuantity', label: 'Доступно' },
         ]}
       />
 
-      <Typography variant="h6">Recent operations</Typography>
+      <Typography variant="h6">Последние операции</Typography>
       <ResourceTable
         rows={card.recentOperations}
         total={card.recentOperations.length}
@@ -98,11 +98,11 @@ export function ProductCardPage() {
         onSizeChange={() => undefined}
         onView={(operation) => navigate(`/operations/${operation.id}`)}
         columns={[
-          { key: 'operationNumber', label: 'Operation' },
-          { key: 'type', label: 'Type', render: (row) => operationTypeLabels[row.type] },
-          { key: 'status', label: 'Status', render: (row) => operationStatusLabels[row.status] },
-          { key: 'warehouseCode', label: 'Warehouse' },
-          { key: 'createdAt', label: 'Created', render: (row) => fmtDate(row.createdAt) },
+          { key: 'operationNumber', label: 'Операция' },
+          { key: 'type', label: 'Тип', render: (row) => operationTypeLabels[row.type] },
+          { key: 'status', label: 'Статус', render: (row) => operationStatusLabels[row.status] },
+          { key: 'warehouseCode', label: 'Склад' },
+          { key: 'createdAt', label: 'Создана', render: (row) => fmtDate(row.createdAt) },
         ]}
       />
     </Stack>

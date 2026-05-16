@@ -45,7 +45,7 @@ warehouse.demo-data.enabled=false
 - 24 контрагента: 12 поставщиков и 12 клиентов.
 - Реалистичные остатки по ячейкам с пересчетом веса и объема.
 - 180 складских операций за последние месяцы: `INCOME`, `OUTCOME`, `MOVE`, статусы `COMPLETED`, `DRAFT`, `CANCELLED`, источники `MANUAL` и `EDI`.
-- EDI demo data: 5 партнеров, mapping-и, 30 сообщений, queue entries и audit entries.
+- EDI demo data: партнеры, mapping-и, 30+ сообщений, queue entries, audit entries и полные GRD-REG цепочки DESADV/ORDERS.
 - Audit log записи для отчетов и dashboard.
 
 Данные идемпотентны: справочники обновляются по уникальным кодам/SKU, операции и EDI-сообщения создаются по фиксированным `DEMO-*` номерам и не дублируются при повторном запуске.

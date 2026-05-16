@@ -23,7 +23,7 @@ Unsupported combinations fail processing with a clear error. Examples: supplier 
       "quantity": 5,
       "toCellId": 1,
       "unitPrice": 10.0,
-      "unitOfMeasure": "pcs"
+      "unitOfMeasure": "шт"
     }
   ]
 }
@@ -42,7 +42,7 @@ Unsupported combinations fail processing with a clear error. Examples: supplier 
       "quantity": 2,
       "fromCellId": 1,
       "unitPrice": 10.0,
-      "unitOfMeasure": "pcs"
+      "unitOfMeasure": "шт"
     }
   ]
 }
