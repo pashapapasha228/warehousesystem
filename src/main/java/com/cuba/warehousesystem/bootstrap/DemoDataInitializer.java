@@ -22,6 +22,8 @@ import com.cuba.warehousesystem.model.OperationSource;
 import com.cuba.warehousesystem.model.OperationStatus;
 import com.cuba.warehousesystem.model.OperationType;
 import com.cuba.warehousesystem.model.Product;
+import com.cuba.warehousesystem.model.ProductCategory;
+import com.cuba.warehousesystem.model.ProductWarehouseMinStock;
 import com.cuba.warehousesystem.model.StockBalance;
 import com.cuba.warehousesystem.model.StorageCell;
 import com.cuba.warehousesystem.model.User;
@@ -37,6 +39,7 @@ import com.cuba.warehousesystem.repository.EdiPartnerRepository;
 import com.cuba.warehousesystem.repository.EdiProcessingQueueRepository;
 import com.cuba.warehousesystem.repository.OperationRepository;
 import com.cuba.warehousesystem.repository.ProductRepository;
+import com.cuba.warehousesystem.repository.ProductWarehouseMinStockRepository;
 import com.cuba.warehousesystem.repository.StockBalanceRepository;
 import com.cuba.warehousesystem.repository.StorageCellRepository;
 import com.cuba.warehousesystem.repository.UserRepository;
@@ -79,6 +82,7 @@ public class DemoDataInitializer implements ApplicationRunner {
     private final WarehouseRepository warehouseRepository;
     private final StorageCellRepository storageCellRepository;
     private final ProductRepository productRepository;
+    private final ProductWarehouseMinStockRepository productWarehouseMinStockRepository;
     private final CounterpartyRepository counterpartyRepository;
     private final StockBalanceRepository stockBalanceRepository;
     private final OperationRepository operationRepository;
@@ -99,7 +103,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         Map<String, User> users = seedUsers();
         Map<String, Warehouse> warehouses = seedWarehouses();
         Map<String, StorageCell> cells = seedStorageCells(warehouses);
-        Map<String, Product> products = seedProducts();
+        Map<String, Product> products = seedProducts(warehouses);
         Map<String, Counterparty> counterparties = seedCounterparties();
 
         seedBalances(products, cells);
@@ -251,7 +255,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         return storageCellRepository.save(cell);
     }
 
-    private Map<String, Product> seedProducts() {
+    private Map<String, Product> seedProducts(Map<String, Warehouse> warehouses) {
         List<ProductSeed> seeds = List.of(
                 p("NB-L14-GEN4", "4811001000011", "Ноутбук Lenovo ThinkPad L14 Gen 4", "Электроника", 12, "1.65", "35", "24", "2.2", true),
                 p("MON-DELL-P2422H", "4811001000028", "Монитор Dell P2422H 24\"", "Электроника", 18, "5.20", "54", "18", "42", true),
@@ -313,17 +317,31 @@ public class DemoDataInitializer implements ApplicationRunner {
             product.setSku(seed.sku());
             product.setBarcode(seed.barcode());
             product.setName(seed.name());
-            product.setCategory(seed.category());
-            product.setMinStockLevel(seed.minStockLevel());
+            product.setCategory(ProductCategory.fromLabel(seed.category()));
             product.setWeightPerUnitKg(seed.weightKg());
             product.setLengthCm(seed.lengthCm());
             product.setWidthCm(seed.widthCm());
             product.setHeightCm(seed.heightCm());
             product.setVolumePerUnitCm3(seed.lengthCm().multiply(seed.widthCm()).multiply(seed.heightCm()).setScale(3, RoundingMode.HALF_UP));
             product.setIsActive(seed.active());
-            result.put(seed.sku(), productRepository.save(product));
+            Product saved = productRepository.save(product);
+            result.put(seed.sku(), saved);
+            warehouses.values().forEach(warehouse -> upsertProductMinimum(saved, warehouse, seed.minStockLevel()));
         }
         return result;
+    }
+
+    private void upsertProductMinimum(Product product, Warehouse warehouse, int minStockLevel) {
+        ProductWarehouseMinStock minimum = productWarehouseMinStockRepository
+                .findByProduct_IdAndWarehouse_Id(product.getId(), warehouse.getId())
+                .orElseGet(() -> {
+                    ProductWarehouseMinStock created = new ProductWarehouseMinStock();
+                    created.setProduct(product);
+                    created.setWarehouse(warehouse);
+                    return created;
+                });
+        minimum.setMinStockLevel(minStockLevel);
+        productWarehouseMinStockRepository.save(minimum);
     }
 
     private Map<String, Counterparty> seedCounterparties() {
@@ -413,12 +431,12 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     private int desiredStock(Product product, int index) {
         if (index == 4 || index == 6 || index == 28 || index == 34 || index == 37 || index == 48) {
-            return Math.max(1, product.getMinStockLevel() - 1);
+            return 1;
         }
-        if (List.of("Кабельная продукция", "Расходники", "Офис").contains(product.getCategory())) {
+        if (List.of(ProductCategory.CABLES, ProductCategory.CONSUMABLES, ProductCategory.OFFICE).contains(product.getCategory())) {
             return 80 + (index % 7) * 35;
         }
-        if (List.of("Серверное оборудование").contains(product.getCategory())) {
+        if (product.getCategory() == ProductCategory.SERVER) {
             return 3 + (index % 4) * 2;
         }
         if (index < 12 || index == 39 || index == 40 || index == 41) {
@@ -579,8 +597,8 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     private int quantityForOperation(Product product, int i, int itemIndex, OperationType type) {
         int base = switch (product.getCategory()) {
-            case "Расходники", "Кабельная продукция", "Офис" -> 12 + (i + itemIndex) % 35;
-            case "Серверное оборудование" -> 1 + (i + itemIndex) % 3;
+            case CONSUMABLES, CABLES, OFFICE -> 12 + (i + itemIndex) % 35;
+            case SERVER -> 1 + (i + itemIndex) % 3;
             default -> 2 + (i + itemIndex) % 12;
         };
         return type == OperationType.MOVE ? Math.max(1, base / 2) : base;
@@ -588,13 +606,13 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     private BigDecimal priceFor(Product product, int i) {
         BigDecimal categoryBase = switch (product.getCategory()) {
-            case "Серверное оборудование" -> bd("4500");
-            case "Сетевое оборудование" -> bd("420");
-            case "Комплектующие" -> bd("180");
-            case "Электроника" -> bd("760");
-            case "Инструменты" -> bd("95");
-            case "Кабельная продукция" -> bd("18");
-            case "Офис" -> bd("9");
+            case SERVER -> bd("4500");
+            case NETWORK -> bd("420");
+            case COMPONENTS -> bd("180");
+            case ELECTRONICS -> bd("760");
+            case TOOLS -> bd("95");
+            case CABLES -> bd("18");
+            case OFFICE -> bd("9");
             default -> bd("6");
         };
         return categoryBase.add(bd(String.valueOf(i % 17)).multiply(bd("3.15"))).setScale(2, RoundingMode.HALF_UP);

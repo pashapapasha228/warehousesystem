@@ -1,5 +1,5 @@
-import { Add, Refresh } from '@mui/icons-material';
-import { Alert, Box, Button, Snackbar, Stack, Typography } from '@mui/material';
+import { Add, Clear, Refresh, Search } from '@mui/icons-material';
+import { Alert, Box, Button, IconButton, InputAdornment, Snackbar, Stack, TextField, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { getErrorMessage } from '../api/http';
@@ -46,12 +46,30 @@ export function ResourcePage<T extends { id?: number }>({
   const [notice, setNotice] = useState('');
   const [sortBy, setSortBy] = useState('id');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [searchText, setSearchText] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const allowed = canEdit(user?.role);
 
   const query = useQuery({
-    queryKey: [queryKey, page, size, sortBy, sortDirection],
-    queryFn: () => api.list({ page, size, sort: `${sortBy},${sortDirection}` }),
+    queryKey: [queryKey, page, size, sortBy, sortDirection, appliedSearch],
+    queryFn: () => api.list({
+      page,
+      size,
+      sort: `${sortBy},${sortDirection}`,
+      ...(appliedSearch ? { search: appliedSearch } : {}),
+    }),
   });
+
+  const applySearch = () => {
+    setAppliedSearch(searchText.trim());
+    setPage(0);
+  };
+
+  const clearSearch = () => {
+    setSearchText('');
+    setAppliedSearch('');
+    setPage(0);
+  };
 
   const saveMutation = useMutation({
     mutationFn: (data: any) => editing?.id ? api.update!(editing.id, data) : api.create!(data),
@@ -85,6 +103,43 @@ export function ResourcePage<T extends { id?: number }>({
         {allowed && <Button variant="contained" startIcon={<Add />} onClick={() => { setEditing(null); setFormOpen(true); }}>Создать</Button>}
       </Box>
       {!allowed && <Alert severity="info">Ваша роль разрешает просмотр, но не изменение этого раздела.</Alert>}
+      <Box
+        component="form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          applySearch();
+        }}
+        sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}
+      >
+        <TextField
+          value={searchText}
+          onChange={(event) => setSearchText(event.target.value)}
+          label="Поиск"
+          placeholder="Код, название, SKU, адрес, ячейка..."
+          size="small"
+          sx={{ flex: '1 1 320px', maxWidth: 620 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <Search fontSize="small" />
+              </InputAdornment>
+            ),
+            endAdornment: searchText ? (
+              <InputAdornment position="end">
+                <IconButton aria-label="Очистить поиск" edge="end" size="small" onClick={clearSearch}>
+                  <Clear fontSize="small" />
+                </IconButton>
+              </InputAdornment>
+            ) : undefined,
+          }}
+        />
+        <Button type="submit" variant="outlined" startIcon={<Search />}>Найти</Button>
+        {appliedSearch && (
+          <Typography color="text.secondary" variant="body2">
+            Фильтр: {appliedSearch}
+          </Typography>
+        )}
+      </Box>
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message={getErrorMessage(query.error)} />}
       {query.data && (

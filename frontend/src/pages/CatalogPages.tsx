@@ -1,4 +1,5 @@
 import { Chip } from '@mui/material';
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { ResourcePage } from '../components/ResourcePage';
 import { BoolChip, FillBar } from '../components/tables/ResourceTable';
@@ -11,6 +12,8 @@ const activeField = { name: 'isActive', label: 'Активно', type: 'checkbox
 
 export function ProductsPage() {
   const navigate = useNavigate();
+  const categories = useQuery({ queryKey: ['product-categories'], queryFn: productsApi.categories });
+  const categoryLabels = Object.fromEntries((categories.data ?? []).map((category) => [category.code, category.label]));
   return (
     <ResourcePage
       title="Товары"
@@ -21,18 +24,15 @@ export function ProductsPage() {
       columns={[
         { key: 'sku', label: 'SKU' },
         { key: 'name', label: 'Название' },
-        { key: 'category', label: 'Категория' },
-        { key: 'minStockLevel', label: 'Мин.' },
+        { key: 'category', label: 'Категория', render: (row) => row.category ? categoryLabels[row.category] ?? row.category : '—' },
         { key: 'isActive', label: 'Статус', render: (r) => <BoolChip value={r.isActive} /> },
       ]}
       fields={[
         { name: 'sku', label: 'SKU', required: true },
         { name: 'barcode', label: 'Штрихкод' },
         { name: 'name', label: 'Название', required: true },
-        { name: 'category', label: 'Категория' },
-        { name: 'minStockLevel', label: 'Минимальный остаток', type: 'number' },
+        { name: 'category', label: 'Категория', type: 'select', options: (categories.data ?? []).map((category) => ({ value: category.code, label: category.label })) },
         { name: 'weightPerUnitKg', label: 'Вес единицы, кг', type: 'number' },
-        { name: 'volumePerUnitCm3', label: 'Объем единицы, см3', type: 'number' },
         { name: 'lengthCm', label: 'Длина, см', type: 'number' },
         { name: 'widthCm', label: 'Ширина, см', type: 'number' },
         { name: 'heightCm', label: 'Высота, см', type: 'number' },

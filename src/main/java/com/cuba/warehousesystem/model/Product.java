@@ -2,6 +2,8 @@ package com.cuba.warehousesystem.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -36,11 +38,9 @@ public class Product {
     @Column(nullable = false)
     private String name;
 
-    @Column(length = 100)
-    private String category;
-
-    @Column(name = "min_stock_level", nullable = false)
-    private Integer minStockLevel = 0;
+    @Enumerated(EnumType.STRING)
+    @Column(length = 50)
+    private ProductCategory category = ProductCategory.OTHER;
 
     @Column(name = "weight_per_unit_kg", nullable = false, precision = 12, scale = 3)
     private BigDecimal weightPerUnitKg = BigDecimal.ZERO;
@@ -81,9 +81,6 @@ public class Product {
     }
 
     private void normalizeDefaults() {
-        if (minStockLevel == null) {
-            minStockLevel = 0;
-        }
         if (weightPerUnitKg == null) {
             weightPerUnitKg = BigDecimal.ZERO;
         }

@@ -43,9 +43,10 @@ public class StorageCellController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ResponseEntity<Page<StorageCellResponse>> getAll(
             @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) String search,
             Pageable pageable
     ) {
-        return ResponseEntity.ok(storageCellService.getAll(warehouseId, pageable));
+        return ResponseEntity.ok(storageCellService.getAll(warehouseId, search, pageable));
     }
 
     @PutMapping("/{id}")

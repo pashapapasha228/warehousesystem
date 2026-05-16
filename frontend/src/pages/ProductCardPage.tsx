@@ -1,29 +1,54 @@
-import { Box, Button, Card, CardContent, Chip, Grid2 as Grid, Stack, Typography } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
+import { Alert, Box, Button, Card, CardContent, Chip, Grid2 as Grid, Stack, TextField, Typography } from '@mui/material';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { productsApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
 import { useWarehouseContext } from '../app/WarehouseContext';
 import { ErrorState, LoadingState } from '../components/feedback/StateViews';
 import { ResourceTable } from '../components/tables/ResourceTable';
+import { useAuth } from '../auth/useAuth';
 import { operationStatusLabels, operationTypeLabels } from '../types/enums';
 import { fmtDate } from '../utils/format';
+import { canManageCatalogs } from '../utils/permissions';
 
 export function ProductCardPage() {
   const id = Number(useParams().id);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { warehouseId, selectedWarehouse } = useWarehouseContext();
+  const [minimums, setMinimums] = useState<Record<number, number>>({});
+  const [notice, setNotice] = useState('');
   const query = useQuery({
     queryKey: ['product-card', id, warehouseId],
     queryFn: () => productsApi.card(id, { warehouseId: warehouseId || undefined }),
     enabled: Number.isFinite(id),
   });
+  const categories = useQuery({ queryKey: ['product-categories'], queryFn: productsApi.categories });
+  const saveMinimum = useMutation({
+    mutationFn: ({ targetWarehouseId, minStockLevel }: { targetWarehouseId: number; minStockLevel: number }) => productsApi.setWarehouseMinStock(id, { warehouseId: targetWarehouseId, minStockLevel }),
+    onSuccess: () => {
+      setNotice('Минимальный остаток сохранен.');
+      queryClient.invalidateQueries({ queryKey: ['product-card', id] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['report-low-stock'] });
+    },
+    onError: (error) => setNotice(getErrorMessage(error)),
+  });
+
+  useEffect(() => {
+    if (!query.data) return;
+    setMinimums(Object.fromEntries(query.data.minStockLevels.map((row) => [row.warehouseId, row.minStockLevel])));
+  }, [query.data]);
 
   if (query.isLoading) return <LoadingState />;
   if (query.isError) return <ErrorState message={getErrorMessage(query.error)} />;
 
   const card = query.data!;
   const product = card.product;
+  const categoryLabel = categories.data?.find((category) => category.code === product.category)?.label ?? product.category;
+  const canEditMinimums = canManageCatalogs(user?.role);
 
   return (
     <Stack spacing={2}>
@@ -40,17 +65,48 @@ export function ProductCardPage() {
         <Grid size={{ xs: 12, md: 3 }}><Metric title="Всего" value={card.totalQuantity} /></Grid>
         <Grid size={{ xs: 12, md: 3 }}><Metric title="Доступно" value={card.totalAvailableQuantity} /></Grid>
         <Grid size={{ xs: 12, md: 3 }}><Metric title="В резерве" value={card.totalReservedQuantity} /></Grid>
-        <Grid size={{ xs: 12, md: 3 }}><Metric title="Минимальный остаток" value={product.minStockLevel ?? 0} /></Grid>
+        <Grid size={{ xs: 12, md: 3 }}><Metric title="Порогов задано" value={card.minStockLevels.filter((row) => row.minStockLevel > 0).length} /></Grid>
       </Grid>
+      {notice && <Alert severity={notice.includes('сохранен') ? 'success' : 'error'} onClose={() => setNotice('')}>{notice}</Alert>}
 
       <Card>
         <CardContent>
           <Typography variant="h6" gutterBottom>Основная информация</Typography>
           <Grid container spacing={2}>
-            <Grid size={{ xs: 12, md: 3 }}><Info title="Категория" value={product.category} /></Grid>
+            <Grid size={{ xs: 12, md: 3 }}><Info title="Категория" value={categoryLabel} /></Grid>
             <Grid size={{ xs: 12, md: 3 }}><Info title="Штрихкод" value={product.barcode} /></Grid>
             <Grid size={{ xs: 12, md: 3 }}><Info title="Габариты" value={`${product.lengthCm ?? 0} x ${product.widthCm ?? 0} x ${product.heightCm ?? 0} см`} /></Grid>
+            <Grid size={{ xs: 12, md: 3 }}><Info title="Расчетный объем" value={`${product.volumePerUnitCm3 ?? 0} см3`} /></Grid>
           </Grid>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>Минимальный остаток по складам</Typography>
+          <Stack spacing={1.5}>
+            {card.minStockLevels.map((row) => (
+              <Box key={row.warehouseId} display="grid" gridTemplateColumns={{ xs: '1fr', md: '1fr 180px 120px' }} gap={1.5} alignItems="center">
+                <Typography>{row.warehouseCode} · {row.warehouseName}</Typography>
+                <TextField
+                  label="Минимум, шт."
+                  type="number"
+                  size="small"
+                  disabled={!canEditMinimums}
+                  inputProps={{ min: 0 }}
+                  value={minimums[row.warehouseId] ?? 0}
+                  onChange={(event) => setMinimums((current) => ({ ...current, [row.warehouseId]: Number(event.target.value) }))}
+                />
+                <Button
+                  variant="outlined"
+                  disabled={!canEditMinimums || saveMinimum.isPending}
+                  onClick={() => saveMinimum.mutate({ targetWarehouseId: row.warehouseId, minStockLevel: Math.max(0, Number(minimums[row.warehouseId]) || 0) })}
+                >
+                  Сохранить
+                </Button>
+              </Box>
+            ))}
+          </Stack>
         </CardContent>
       </Card>
 
@@ -67,6 +123,7 @@ export function ProductCardPage() {
           { key: 'quantity', label: 'Всего' },
           { key: 'reservedQuantity', label: 'В резерве' },
           { key: 'availableQuantity', label: 'Доступно' },
+          { key: 'minStockLevel', label: 'Минимум' },
         ]}
       />
 

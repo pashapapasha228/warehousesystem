@@ -20,8 +20,10 @@ import com.cuba.warehousesystem.model.OperationItem;
 import com.cuba.warehousesystem.model.OperationStatus;
 import com.cuba.warehousesystem.model.OperationType;
 import com.cuba.warehousesystem.model.Product;
+import com.cuba.warehousesystem.model.ProductWarehouseMinStock;
 import com.cuba.warehousesystem.model.StockBalance;
 import com.cuba.warehousesystem.model.StorageCell;
+import com.cuba.warehousesystem.repository.ProductWarehouseMinStockRepository;
 import com.cuba.warehousesystem.repository.AuditLogRepository;
 import com.cuba.warehousesystem.repository.EdiMessageRepository;
 import com.cuba.warehousesystem.repository.EdiProcessingQueueRepository;
@@ -56,6 +58,7 @@ public class ReportService {
 
     private final OperationRepository operationRepository;
     private final ProductRepository productRepository;
+    private final ProductWarehouseMinStockRepository productWarehouseMinStockRepository;
     private final WarehouseRepository warehouseRepository;
     private final StockBalanceRepository stockBalanceRepository;
     private final StorageCellRepository storageCellRepository;
@@ -285,21 +288,35 @@ public class ReportService {
     }
 
     public List<ProductAlert> findLowStockAlerts() {
-        Map<Product, Integer> totals = stockBalanceRepository.findAll().stream()
+        Map<ProductWarehouseKey, Integer> totals = stockBalanceRepository.findAll().stream()
                 .collect(Collectors.groupingBy(
-                        StockBalance::getProduct,
+                        balance -> new ProductWarehouseKey(
+                                balance.getProduct().getId(),
+                                balance.getCell().getWarehouse().getId()
+                        ),
                         Collectors.summingInt(StockBalance::getQuantity)
                 ));
 
-        return totals.entrySet().stream()
-                .filter(entry -> entry.getKey().getMinStockLevel() > 0)
-                .filter(entry -> entry.getValue() < entry.getKey().getMinStockLevel())
-                .map(entry -> new ProductAlert(
-                        entry.getKey().getName(),
-                        entry.getKey().getSku(),
-                        entry.getValue(),
-                        entry.getKey().getMinStockLevel()
-                ))
+        return productWarehouseMinStockRepository.findAll().stream()
+                .filter(minimum -> minimum.getMinStockLevel() > 0)
+                .filter(minimum -> totals.getOrDefault(new ProductWarehouseKey(
+                        minimum.getProduct().getId(),
+                        minimum.getWarehouse().getId()
+                ), 0) < minimum.getMinStockLevel())
+                .map(minimum -> {
+                    int currentStock = totals.getOrDefault(new ProductWarehouseKey(
+                            minimum.getProduct().getId(),
+                            minimum.getWarehouse().getId()
+                    ), 0);
+                    return new ProductAlert(
+                            minimum.getProduct().getName(),
+                            minimum.getProduct().getSku(),
+                            minimum.getWarehouse().getId(),
+                            minimum.getWarehouse().getCode(),
+                            currentStock,
+                            minimum.getMinStockLevel()
+                    );
+                })
                 .toList();
     }
 
@@ -366,5 +383,8 @@ public class ReportService {
                     totalQuantity + other.totalQuantity()
             );
         }
+    }
+
+    private record ProductWarehouseKey(Long productId, Long warehouseId) {
     }
 }

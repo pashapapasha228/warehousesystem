@@ -45,8 +45,7 @@ export type Product = {
   sku: string;
   barcode?: string;
   name: string;
-  category?: string;
-  minStockLevel?: number;
+  category?: ProductCategoryCode;
   weightPerUnitKg?: number;
   volumePerUnitCm3?: number;
   lengthCm?: number;
@@ -55,6 +54,22 @@ export type Product = {
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type ProductCategoryCode =
+  | 'ELECTRONICS'
+  | 'COMPONENTS'
+  | 'CABLES'
+  | 'TOOLS'
+  | 'OFFICE'
+  | 'CONSUMABLES'
+  | 'NETWORK'
+  | 'SERVER'
+  | 'OTHER';
+
+export type ProductCategory = {
+  code: ProductCategoryCode;
+  label: string;
 };
 
 export type ProductCard = {
@@ -68,6 +83,14 @@ export type ProductCard = {
     quantity: number;
     reservedQuantity: number;
     availableQuantity: number;
+    minStockLevel: number;
+  }>;
+  minStockLevels: Array<{
+    productId: number;
+    warehouseId: number;
+    warehouseCode: string;
+    warehouseName: string;
+    minStockLevel: number;
   }>;
   placements: Array<{
     warehouseId: number;
@@ -301,5 +324,5 @@ export type DashboardReport = {
     currentWeight?: number;
     maxWeight?: number;
   }>;
-  lowStockAlerts: Array<{ productName: string; sku: string; currentStock: number; minLevel: number }>;
+  lowStockAlerts: Array<{ productName: string; sku: string; warehouseId: number; warehouseCode: string; currentStock: number; minLevel: number }>;
 };

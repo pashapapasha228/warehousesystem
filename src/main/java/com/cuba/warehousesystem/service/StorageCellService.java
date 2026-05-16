@@ -13,6 +13,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 
@@ -40,7 +41,10 @@ public class StorageCellService {
     }
 
     @Transactional(readOnly = true)
-    public Page<StorageCellResponse> getAll(Long warehouseId, Pageable pageable) {
+    public Page<StorageCellResponse> getAll(Long warehouseId, String search, Pageable pageable) {
+        if (StringUtils.hasText(search)) {
+            return storageCellRepository.search(warehouseId, search.trim(), pageable).map(this::toResponse);
+        }
         if (warehouseId != null) {
             return storageCellRepository.findByWarehouse_Id(warehouseId, pageable).map(this::toResponse);
         }

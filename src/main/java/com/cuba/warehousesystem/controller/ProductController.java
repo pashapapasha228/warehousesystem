@@ -1,8 +1,11 @@
 package com.cuba.warehousesystem.controller;
 
 import com.cuba.warehousesystem.dto.ProductCardResponse;
+import com.cuba.warehousesystem.dto.ProductCategoryResponse;
 import com.cuba.warehousesystem.dto.ProductRequest;
 import com.cuba.warehousesystem.dto.ProductResponse;
+import com.cuba.warehousesystem.dto.ProductWarehouseMinStockRequest;
+import com.cuba.warehousesystem.dto.ProductWarehouseMinStockResponse;
 import com.cuba.warehousesystem.service.ProductService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +23,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/products")
@@ -40,6 +45,12 @@ public class ProductController {
         return ResponseEntity.ok(productService.getById(id));
     }
 
+    @GetMapping("/categories")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public ResponseEntity<List<ProductCategoryResponse>> getCategories() {
+        return ResponseEntity.ok(productService.getCategories());
+    }
+
     @GetMapping("/{id}/card")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ResponseEntity<ProductCardResponse> getCard(
@@ -51,14 +62,26 @@ public class ProductController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
-    public ResponseEntity<Page<ProductResponse>> getAll(Pageable pageable) {
-        return ResponseEntity.ok(productService.getAll(pageable));
+    public ResponseEntity<Page<ProductResponse>> getAll(
+            @RequestParam(required = false) String search,
+            Pageable pageable
+    ) {
+        return ResponseEntity.ok(productService.getAll(search, pageable));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ProductResponse> update(@PathVariable Long id, @Valid @RequestBody ProductRequest request) {
         return ResponseEntity.ok(productService.update(id, request));
+    }
+
+    @PutMapping("/{id}/warehouse-min-stock")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ProductWarehouseMinStockResponse> setWarehouseMinStock(
+            @PathVariable Long id,
+            @Valid @RequestBody ProductWarehouseMinStockRequest request
+    ) {
+        return ResponseEntity.ok(productService.setWarehouseMinStock(id, request));
     }
 
     @DeleteMapping("/{id}")

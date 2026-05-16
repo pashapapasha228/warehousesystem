@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -43,7 +44,10 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public Page<UserResponse> getAll(Pageable pageable) {
+    public Page<UserResponse> getAll(String search, Pageable pageable) {
+        if (StringUtils.hasText(search)) {
+            return userRepository.search(search.trim(), pageable).map(this::toResponse);
+        }
         return userRepository.findAll(pageable).map(this::toResponse);
     }
 

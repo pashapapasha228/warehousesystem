@@ -15,6 +15,7 @@ import com.cuba.warehousesystem.repository.EdiMessageRepository;
 import com.cuba.warehousesystem.repository.EdiProcessingQueueRepository;
 import com.cuba.warehousesystem.repository.OperationRepository;
 import com.cuba.warehousesystem.repository.ProductRepository;
+import com.cuba.warehousesystem.repository.ProductWarehouseMinStockRepository;
 import com.cuba.warehousesystem.repository.StockBalanceRepository;
 import com.cuba.warehousesystem.repository.StorageCellRepository;
 import com.cuba.warehousesystem.repository.WarehouseRepository;
@@ -39,6 +40,8 @@ class ReportServiceTest {
     private OperationRepository operationRepository;
     @Mock
     private ProductRepository productRepository;
+    @Mock
+    private ProductWarehouseMinStockRepository productWarehouseMinStockRepository;
     @Mock
     private WarehouseRepository warehouseRepository;
     @Mock
@@ -100,7 +103,6 @@ class ReportServiceTest {
         product.setId(id);
         product.setSku(sku);
         product.setName(name);
-        product.setMinStockLevel(0);
         return product;
     }
 

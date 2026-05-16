@@ -15,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -40,7 +41,10 @@ public class EdiPartnerService {
     }
 
     @Transactional(readOnly = true)
-    public Page<EdiPartnerResponse> getAll(Pageable pageable) {
+    public Page<EdiPartnerResponse> getAll(String search, Pageable pageable) {
+        if (StringUtils.hasText(search)) {
+            return ediPartnerRepository.search(search.trim(), pageable).map(this::toResponse);
+        }
         return ediPartnerRepository.findAll(pageable).map(this::toResponse);
     }
 

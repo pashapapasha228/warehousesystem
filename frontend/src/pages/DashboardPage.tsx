@@ -62,8 +62,8 @@ export function DashboardPage() {
               <Stack spacing={1}>
                 {data.lowStockAlerts.length === 0 && <Alert severity="success">Критичных остатков нет.</Alert>}
                 {data.lowStockAlerts.slice(0, 8).map((alert) => (
-                  <Alert key={alert.sku} severity="warning">
-                    {alert.productName} ({alert.sku}): {alert.currentStock} из минимума {alert.minLevel}
+                  <Alert key={`${alert.sku}-${alert.warehouseCode}`} severity="warning">
+                    {alert.productName} ({alert.sku}), склад {alert.warehouseCode}: {alert.currentStock} из минимума {alert.minLevel}
                     <LinearProgress sx={{ mt: 1 }} color="warning" variant="determinate" value={Math.min(100, (alert.currentStock / Math.max(alert.minLevel, 1)) * 100)} />
                   </Alert>
                 ))}

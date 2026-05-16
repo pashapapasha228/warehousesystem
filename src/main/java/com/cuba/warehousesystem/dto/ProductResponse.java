@@ -1,5 +1,7 @@
 package com.cuba.warehousesystem.dto;
 
+import com.cuba.warehousesystem.model.ProductCategory;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -8,8 +10,7 @@ public record ProductResponse(
         String sku,
         String barcode,
         String name,
-        String category,
-        Integer minStockLevel,
+        ProductCategory category,
         BigDecimal weightPerUnitKg,
         BigDecimal volumePerUnitCm3,
         BigDecimal lengthCm,

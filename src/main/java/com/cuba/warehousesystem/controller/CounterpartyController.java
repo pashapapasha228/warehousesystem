@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -40,8 +41,11 @@ public class CounterpartyController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
-    public ResponseEntity<Page<CounterpartyResponse>> getAll(Pageable pageable) {
-        return ResponseEntity.ok(counterpartyService.getAll(pageable));
+    public ResponseEntity<Page<CounterpartyResponse>> getAll(
+            @RequestParam(required = false) String search,
+            Pageable pageable
+    ) {
+        return ResponseEntity.ok(counterpartyService.getAll(search, pageable));
     }
 
     @PutMapping("/{id}")

@@ -57,6 +57,7 @@ export function ReportsPage() {
             <ResourceTable rows={lowStock.data ?? []} total={(lowStock.data ?? []).length} page={0} size={10} onPageChange={() => undefined} onSizeChange={() => undefined} columns={[
               { key: 'sku', label: 'SKU' },
               { key: 'productName', label: 'Товар' },
+              { key: 'warehouseCode', label: 'Склад' },
               { key: 'currentStock', label: 'Остаток' },
               { key: 'minLevel', label: 'Минимум' },
             ]} />
