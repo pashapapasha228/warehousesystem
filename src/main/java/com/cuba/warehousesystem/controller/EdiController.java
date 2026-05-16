@@ -5,6 +5,7 @@ import com.cuba.warehousesystem.dto.EdiMessageReceiveRequest;
 import com.cuba.warehousesystem.dto.EdiMessageResponse;
 import com.cuba.warehousesystem.dto.EdiProcessResultResponse;
 import com.cuba.warehousesystem.dto.EdiProcessingQueueResponse;
+import com.cuba.warehousesystem.dto.EdiSimulationRequest;
 import com.cuba.warehousesystem.model.EdiMessageStatus;
 import com.cuba.warehousesystem.model.EdiMessageType;
 import com.cuba.warehousesystem.model.EdiQueueStatus;
@@ -36,6 +37,18 @@ public class EdiController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<EdiMessageResponse> receiveInbound(@Valid @RequestBody EdiMessageReceiveRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(ediProcessingService.receiveInbound(request));
+    }
+
+    @PostMapping("/simulator/supplier")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<EdiMessageResponse> simulateSupplier(@Valid @RequestBody EdiSimulationRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ediProcessingService.simulateSupplierDesadv(request));
+    }
+
+    @PostMapping("/simulator/customer")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<EdiMessageResponse> simulateCustomer(@Valid @RequestBody EdiSimulationRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ediProcessingService.simulateCustomerOrders(request));
     }
 
     @GetMapping("/messages/{id}")

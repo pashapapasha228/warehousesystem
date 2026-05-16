@@ -40,7 +40,10 @@ public class StorageCellService {
     }
 
     @Transactional(readOnly = true)
-    public Page<StorageCellResponse> getAll(Pageable pageable) {
+    public Page<StorageCellResponse> getAll(Long warehouseId, Pageable pageable) {
+        if (warehouseId != null) {
+            return storageCellRepository.findByWarehouse_Id(warehouseId, pageable).map(this::toResponse);
+        }
         return storageCellRepository.findAll(pageable).map(this::toResponse);
     }
 

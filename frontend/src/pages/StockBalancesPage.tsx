@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { operationsApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
+import { useWarehouseContext } from '../app/WarehouseContext';
 import { ErrorState, LoadingState } from '../components/feedback/StateViews';
 import { ResourceTable } from '../components/tables/ResourceTable';
 import { fmtDate } from '../utils/format';
@@ -12,7 +13,8 @@ export function StockBalancesPage() {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const tableSort = useTableSort('productSku', 'asc');
-  const query = useQuery({ queryKey: ['stock-balances', page, size, tableSort.sort], queryFn: () => operationsApi.stockBalances({ page, size, sort: tableSort.sort }) });
+  const { warehouseId } = useWarehouseContext();
+  const query = useQuery({ queryKey: ['stock-balances', page, size, warehouseId, tableSort.sort], queryFn: () => operationsApi.stockBalances({ page, size, sort: tableSort.sort, warehouseId: warehouseId || undefined }) });
   return (
     <Stack spacing={2}>
       <Box display="flex" alignItems="center" gap={2}>

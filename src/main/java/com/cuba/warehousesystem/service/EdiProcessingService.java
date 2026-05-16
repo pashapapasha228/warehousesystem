@@ -1,6 +1,7 @@
 package com.cuba.warehousesystem.service;
 
 import com.cuba.warehousesystem.dto.EdiAuditLogResponse;
+import com.cuba.warehousesystem.dto.EdiSimulationRequest;
 import com.cuba.warehousesystem.dto.EdiMessageReceiveRequest;
 import com.cuba.warehousesystem.dto.EdiMessageResponse;
 import com.cuba.warehousesystem.dto.EdiProcessResultResponse;
@@ -8,6 +9,8 @@ import com.cuba.warehousesystem.dto.EdiProcessingQueueResponse;
 import com.cuba.warehousesystem.dto.OperationRequest;
 import com.cuba.warehousesystem.dto.OperationResponse;
 import com.cuba.warehousesystem.model.CounterpartyType;
+import com.cuba.warehousesystem.model.DocumentExecutionStage;
+import com.cuba.warehousesystem.model.DocumentExecutionStatus;
 import com.cuba.warehousesystem.event.EdiMessageProcessedEvent;
 import com.cuba.warehousesystem.event.EdiMessageReceivedEvent;
 import com.cuba.warehousesystem.exception.BadRequestException;
@@ -49,6 +52,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -114,7 +118,10 @@ public class EdiProcessingService {
         try {
             OperationResponse operationResponse = createOperationFromMessage(message, username);
             if (operationResponse != null) {
-                message.setRelatedOperation(findOperationReference(operationResponse.id()));
+                com.cuba.warehousesystem.model.Operation operation = findOperationReference(operationResponse.id());
+                message.setRelatedOperation(operation);
+                operationService.recordExecutionStep(operation, message, DocumentExecutionStage.EDI_RECEIVED,
+                        DocumentExecutionStatus.DONE, "Created from EDI message " + message.getId(), username);
             }
             message.setStatus(EdiMessageStatus.PROCESSED);
             message.setProcessedAt(LocalDateTime.now());
@@ -186,6 +193,82 @@ public class EdiProcessingService {
                 ? ediAuditLogRepository.findAll(pageable)
                 : ediAuditLogRepository.findByEdiMessage_Id(messageId, pageable);
         return auditLogs.map(this::toResponse);
+    }
+
+    public EdiMessageResponse simulateSupplierDesadv(EdiSimulationRequest request) {
+        Product product = productRepository.findById(request.productId())
+                .orElseThrow(() -> new EntityNotFoundException("Product not found"));
+        EdiPartner partner = ediPartnerRepository.findById(request.partnerId())
+                .orElseThrow(() -> new EntityNotFoundException("EDI partner not found"));
+        if (partner.getCounterparty() == null || partner.getCounterparty().getType() != CounterpartyType.SUPPLIER) {
+            throw new BadRequestException("Supplier simulation requires an EDI partner linked to a supplier.");
+        }
+        Long toCellId = request.cellId();
+        if (toCellId == null) {
+            toCellId = storageCellRepository.findByWarehouse_Id(request.warehouseId()).stream()
+                    .filter(cell -> Boolean.TRUE.equals(cell.getIsActive()))
+                    .findFirst()
+                    .map(com.cuba.warehousesystem.model.StorageCell::getId)
+                    .orElseThrow(() -> new BadRequestException("No active storage cell found for warehouse."));
+        }
+        return receiveInbound(new EdiMessageReceiveRequest(
+                partner.getId(),
+                null,
+                EdiMessageType.DESADV,
+                "SIM-SUP-" + System.currentTimeMillis(),
+                "SIM-SUP-" + System.nanoTime(),
+                firstNonBlank(request.documentNumber(), "SIM-DESADV-" + System.currentTimeMillis()),
+                "{\"simulated\":true,\"actor\":\"supplier\"}",
+                objectMapper.valueToTree(Map.of(
+                        "warehouseId", request.warehouseId(),
+                        "documentDate", LocalDate.now().toString(),
+                        "items", List.of(Map.of(
+                                "productId", product.getId(),
+                                "quantity", request.quantity(),
+                                "toCellId", toCellId,
+                                "unitPrice", BigDecimal.ZERO,
+                                "unitOfMeasure", product.getUnitOfMeasure()
+                        ))
+                ))
+        ));
+    }
+
+    public EdiMessageResponse simulateCustomerOrders(EdiSimulationRequest request) {
+        Product product = productRepository.findById(request.productId())
+                .orElseThrow(() -> new EntityNotFoundException("Product not found"));
+        EdiPartner partner = ediPartnerRepository.findById(request.partnerId())
+                .orElseThrow(() -> new EntityNotFoundException("EDI partner not found"));
+        if (partner.getCounterparty() == null || partner.getCounterparty().getType() != CounterpartyType.CUSTOMER) {
+            throw new BadRequestException("Customer simulation requires an EDI partner linked to a customer.");
+        }
+        Map<String, Object> item = request.cellId() == null
+                ? Map.of(
+                "productId", product.getId(),
+                "quantity", request.quantity(),
+                "unitPrice", BigDecimal.ZERO,
+                "unitOfMeasure", product.getUnitOfMeasure()
+        )
+                : Map.of(
+                "productId", product.getId(),
+                "quantity", request.quantity(),
+                "fromCellId", request.cellId(),
+                "unitPrice", BigDecimal.ZERO,
+                "unitOfMeasure", product.getUnitOfMeasure()
+        );
+        return receiveInbound(new EdiMessageReceiveRequest(
+                partner.getId(),
+                null,
+                EdiMessageType.ORDERS,
+                "SIM-CUS-" + System.currentTimeMillis(),
+                "SIM-CUS-" + System.nanoTime(),
+                firstNonBlank(request.documentNumber(), "SIM-ORDERS-" + System.currentTimeMillis()),
+                "{\"simulated\":true,\"actor\":\"customer\"}",
+                objectMapper.valueToTree(Map.of(
+                        "warehouseId", request.warehouseId(),
+                        "documentDate", LocalDate.now().toString(),
+                        "items", List.of(item)
+                ))
+        ));
     }
 
     private OperationResponse createOperationFromMessage(EdiMessage message, String username) {
@@ -297,11 +380,15 @@ public class EdiProcessingService {
                 ensureCellBelongsToWarehouse(item.toCellId(), warehouseId, "EDI DESADV item target cell");
             }
             if (operationType == OperationType.OUTCOME) {
-                if (item.fromCellId() == null) {
-                    throw new BadRequestException("EDI ORDERS item requires fromCellId for OUTCOME draft creation.");
+                if (item.fromCellId() != null) {
+                    ensureCellBelongsToWarehouse(item.fromCellId(), warehouseId, "EDI ORDERS item source cell");
+                    ensureAvailableStock(item);
+                } else {
+                    Long available = stockBalanceRepository.sumAvailableByProductAndWarehouse(item.productId(), warehouseId);
+                    if (available < item.quantity()) {
+                        throw new BadRequestException("Insufficient available warehouse stock for EDI ORDERS productId " + item.productId());
+                    }
                 }
-                ensureCellBelongsToWarehouse(item.fromCellId(), warehouseId, "EDI ORDERS item source cell");
-                ensureAvailableStock(item);
             }
         }
     }

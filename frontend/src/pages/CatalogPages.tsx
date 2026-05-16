@@ -1,4 +1,5 @@
 import { Chip } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 import { ResourcePage } from '../components/ResourcePage';
 import { BoolChip, FillBar } from '../components/tables/ResourceTable';
 import { counterpartiesApi, productsApi, storageCellsApi, warehousesApi } from '../api/resourcesApi';
@@ -9,12 +10,14 @@ import { fillPercent, n } from '../utils/format';
 const activeField = { name: 'isActive', label: 'Активно', type: 'checkbox' as const };
 
 export function ProductsPage() {
+  const navigate = useNavigate();
   return (
     <ResourcePage
       title="Товары"
       queryKey="products"
       api={productsApi}
       canEdit={canManageCatalogs}
+      onView={(product) => navigate(`/products/${product.id}`)}
       columns={[
         { key: 'sku', label: 'SKU' },
         { key: 'name', label: 'Название' },

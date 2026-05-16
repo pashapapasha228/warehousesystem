@@ -5,6 +5,9 @@ import type {
   EdiMessageStatus,
   EdiMessageType,
   EdiQueueStatus,
+  VerificationDecision,
+  DocumentExecutionStage,
+  DocumentExecutionStatus,
   OperationSource,
   OperationStatus,
   OperationType,
@@ -53,6 +56,30 @@ export type Product = {
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type ProductCard = {
+  product: Product;
+  totalQuantity: number;
+  totalReservedQuantity: number;
+  totalAvailableQuantity: number;
+  warehouseAggregates: Array<{
+    warehouseId: number;
+    warehouseCode: string;
+    quantity: number;
+    reservedQuantity: number;
+    availableQuantity: number;
+  }>;
+  placements: Array<{
+    warehouseId: number;
+    warehouseCode: string;
+    cellId: number;
+    cellCode: string;
+    quantity: number;
+    reservedQuantity: number;
+    availableQuantity: number;
+  }>;
+  recentOperations: Operation[];
 };
 
 export type Warehouse = {
@@ -212,6 +239,39 @@ export type EdiAuditLog = {
   status: EdiAuditStatus;
   details?: string;
   createdAt?: string;
+};
+
+export type DocumentExecutionStep = {
+  id: number;
+  operationId?: number;
+  ediMessageId?: number;
+  stage: DocumentExecutionStage;
+  status: DocumentExecutionStatus;
+  details?: string;
+  createdBy?: string;
+  createdAt?: string;
+};
+
+export type OperationVerificationItem = {
+  id: number;
+  operationItemId: number;
+  productId: number;
+  productSku: string;
+  productName: string;
+  plannedQuantity: number;
+  actualQuantity: number;
+  discrepancyQuantity: number;
+  reason?: string;
+};
+
+export type OperationVerification = {
+  id: number;
+  operationId: number;
+  decision: VerificationDecision;
+  comment?: string;
+  verifiedBy: string;
+  verifiedAt?: string;
+  items: OperationVerificationItem[];
 };
 
 export type User = {

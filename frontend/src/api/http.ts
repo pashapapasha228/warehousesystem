@@ -17,6 +17,11 @@ http.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const storedWarehouseId = localStorage.getItem('warehouse.context.id');
+  const warehouseId = storedWarehouseId ? Number(storedWarehouseId) : null;
+  if (warehouseId) {
+    config.headers['X-Warehouse-Id'] = String(warehouseId);
+  }
   return config;
 });
 

@@ -2,6 +2,7 @@ import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PropsWithChildren } from 'react';
 import { AuthProvider } from '../auth/AuthProvider';
+import { WarehouseProvider } from './WarehouseContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,7 +42,9 @@ export function Providers({ children }: PropsWithChildren) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <WarehouseProvider>{children}</WarehouseProvider>
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

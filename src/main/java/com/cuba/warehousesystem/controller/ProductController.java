@@ -1,5 +1,6 @@
 package com.cuba.warehousesystem.controller;
 
+import com.cuba.warehousesystem.dto.ProductCardResponse;
 import com.cuba.warehousesystem.dto.ProductRequest;
 import com.cuba.warehousesystem.dto.ProductResponse;
 import com.cuba.warehousesystem.service.ProductService;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -36,6 +38,15 @@ public class ProductController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ResponseEntity<ProductResponse> getById(@PathVariable Long id) {
         return ResponseEntity.ok(productService.getById(id));
+    }
+
+    @GetMapping("/{id}/card")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public ResponseEntity<ProductCardResponse> getCard(
+            @PathVariable Long id,
+            @RequestParam(required = false) Long warehouseId
+    ) {
+        return ResponseEntity.ok(productService.getCard(id, warehouseId));
     }
 
     @GetMapping

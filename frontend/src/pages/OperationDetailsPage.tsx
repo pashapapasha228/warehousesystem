@@ -1,6 +1,6 @@
-import { Alert, Box, Button, Card, CardContent, Chip, Divider, Grid2 as Grid, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Card, CardContent, Chip, Divider, FormControl, Grid2 as Grid, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { operationsApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
@@ -16,7 +16,11 @@ export function OperationDetailsPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState('');
+  const [decision, setDecision] = useState<'ACCEPT' | 'REJECT' | 'ACCEPT_PARTIALLY'>('ACCEPT');
+  const [actuals, setActuals] = useState<Record<number, number>>({});
   const query = useQuery({ queryKey: ['operation', id], queryFn: () => operationsApi.get(id), enabled: Number.isFinite(id) });
+  const chain = useQuery({ queryKey: ['operation-chain', id], queryFn: () => operationsApi.executionChain(id), enabled: Number.isFinite(id) });
+  const verifications = useQuery({ queryKey: ['operation-verifications', id], queryFn: () => operationsApi.verifications(id), enabled: Number.isFinite(id) });
   const action = useMutation({
     mutationFn: (kind: 'complete' | 'cancel') => kind === 'complete' ? operationsApi.complete(id) : operationsApi.cancel(id),
     onSuccess: () => {
@@ -26,10 +30,33 @@ export function OperationDetailsPage() {
     onError: (error) => setNotice(getErrorMessage(error)),
   });
 
+  const operationData = query.data;
+  const verify = useMutation({
+    mutationFn: () => operationsApi.verify(id, {
+      decision,
+      items: operationData!.items.map((item) => ({
+        operationItemId: item.id,
+        actualQuantity: actuals[item.id!] ?? item.quantity,
+      })),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['operation', id] });
+      queryClient.invalidateQueries({ queryKey: ['operation-chain', id] });
+      queryClient.invalidateQueries({ queryKey: ['operation-verifications', id] });
+      queryClient.invalidateQueries({ queryKey: ['operations'] });
+    },
+    onError: (error) => setNotice(getErrorMessage(error)),
+  });
+  const canAct = canCompleteOperations(user?.role) && operationData?.status === 'DRAFT';
+  const itemRows = useMemo(() => (operationData?.items ?? []).map((item) => ({
+    ...item,
+    actualQuantity: actuals[item.id!] ?? item.quantity,
+    discrepancy: (actuals[item.id!] ?? item.quantity) - item.quantity,
+  })), [actuals, operationData?.items]);
+
   if (query.isLoading) return <LoadingState />;
   if (query.isError) return <ErrorState message={getErrorMessage(query.error)} />;
-  const operation = query.data!;
-  const canAct = canCompleteOperations(user?.role) && operation.status === 'DRAFT';
+  const operation = operationData!;
 
   return (
     <Stack spacing={2}>
@@ -57,10 +84,10 @@ export function OperationDetailsPage() {
       </Card>
       <Typography variant="h6">Позиции</Typography>
       <ResourceTable
-        rows={operation.items}
-        total={operation.items.length}
+        rows={itemRows}
+        total={itemRows.length}
         page={0}
-        size={operation.items.length || 10}
+        size={itemRows.length || 10}
         onPageChange={() => undefined}
         onSizeChange={() => undefined}
         columns={[
@@ -71,6 +98,70 @@ export function OperationDetailsPage() {
           { key: 'unitOfMeasure', label: 'Ед.' },
           { key: 'fromCellCode', label: 'Из ячейки' },
           { key: 'toCellCode', label: 'В ячейку' },
+        ]}
+      />
+      {canAct && (
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Typography variant="h6">Fact check</Typography>
+              <Box display="flex" gap={2} flexWrap="wrap">
+                <FormControl sx={{ minWidth: 220 }}>
+                  <InputLabel>Decision</InputLabel>
+                  <Select label="Decision" value={decision} onChange={(event) => setDecision(event.target.value as any)}>
+                    <MenuItem value="ACCEPT">Accept</MenuItem>
+                    <MenuItem value="ACCEPT_PARTIALLY">Accept partially</MenuItem>
+                    <MenuItem value="REJECT">Reject</MenuItem>
+                  </Select>
+                </FormControl>
+                <Button variant="contained" disabled={verify.isPending} onClick={() => verify.mutate()}>Fix fact and close</Button>
+              </Box>
+              <Grid container spacing={2}>
+                {operation.items.map((item) => (
+                  <Grid key={item.id} size={{ xs: 12, md: 4 }}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label={`${item.productSku} actual`}
+                      value={actuals[item.id!] ?? item.quantity}
+                      onChange={(event) => setActuals((current) => ({ ...current, [item.id!]: Number(event.target.value) }))}
+                    />
+                  </Grid>
+                ))}
+              </Grid>
+            </Stack>
+          </CardContent>
+        </Card>
+      )}
+      <Typography variant="h6">Business execution chain</Typography>
+      <ResourceTable
+        rows={chain.data ?? []}
+        total={chain.data?.length ?? 0}
+        page={0}
+        size={chain.data?.length || 10}
+        onPageChange={() => undefined}
+        onSizeChange={() => undefined}
+        columns={[
+          { key: 'stage', label: 'Stage' },
+          { key: 'status', label: 'Status' },
+          { key: 'details', label: 'Details' },
+          { key: 'createdBy', label: 'User' },
+          { key: 'createdAt', label: 'Date', render: (row) => fmtDate(row.createdAt) },
+        ]}
+      />
+      <Typography variant="h6">Fact history</Typography>
+      <ResourceTable
+        rows={verifications.data ?? []}
+        total={verifications.data?.length ?? 0}
+        page={0}
+        size={verifications.data?.length || 10}
+        onPageChange={() => undefined}
+        onSizeChange={() => undefined}
+        columns={[
+          { key: 'decision', label: 'Decision' },
+          { key: 'verifiedBy', label: 'User' },
+          { key: 'verifiedAt', label: 'Date', render: (row) => fmtDate(row.verifiedAt) },
+          { key: 'items', label: 'Diffs', render: (row) => row.items.map((item) => `${item.productSku}: ${item.discrepancyQuantity}`).join(', ') },
         ]}
       />
     </Stack>

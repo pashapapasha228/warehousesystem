@@ -18,11 +18,14 @@ import {
   Box,
   Divider,
   Drawer,
+  FormControl,
   IconButton,
   List,
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  MenuItem,
+  Select,
   Toolbar,
   Tooltip,
   Typography,
@@ -31,6 +34,7 @@ import {
 } from '@mui/material';
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { useWarehouseContext } from '../../app/WarehouseContext';
 import { useAuth } from '../../auth/useAuth';
 import { canManageUsers } from '../../utils/permissions';
 import { roleLabels } from '../../types/enums';
@@ -40,6 +44,7 @@ const drawerWidth = 268;
 export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, logout } = useAuth();
+  const { warehouseId, setWarehouseId, warehouses } = useWarehouseContext();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -53,6 +58,7 @@ export function AppLayout() {
     { to: '/operations', label: 'Операции', icon: <MoveDown /> },
     { to: '/stock-balances', label: 'Остатки', icon: <QrCode2 /> },
     { to: '/edi/messages', label: 'EDI сообщения', icon: <LocalShipping /> },
+    { to: '/edi/simulator', label: 'External messages', icon: <LocalShipping /> },
     { to: '/edi/queue', label: 'EDI очередь', icon: <LocalShipping /> },
     { to: '/edi/partners', label: 'EDI партнеры', icon: <LocalShipping /> },
     { to: '/edi/mappings', label: 'EDI маппинги', icon: <LocalShipping /> },
@@ -109,6 +115,18 @@ export function AppLayout() {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" sx={{ flex: 1 }}>Складской учет</Typography>
+          <FormControl size="small" sx={{ minWidth: { xs: 150, sm: 240 }, mr: 2 }}>
+            <Select
+              displayEmpty
+              value={warehouseId ?? ''}
+              onChange={(event) => setWarehouseId(event.target.value ? Number(event.target.value) : null)}
+            >
+              <MenuItem value="">All warehouses</MenuItem>
+              {warehouses.map((warehouse) => (
+                <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
           <Avatar sx={{ width: 32, height: 32, mr: 1 }}>{user?.username?.[0]?.toUpperCase()}</Avatar>
           <Box sx={{ display: { xs: 'none', sm: 'block' }, mr: 1 }}>
             <Typography variant="body2">{user?.username}</Typography>

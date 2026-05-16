@@ -39,6 +39,28 @@ public interface OperationRepository extends JpaRepository<Operation, Long> {
     @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty"})
     Page<Operation> findByStatus(OperationStatus status, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty"})
+    Page<Operation> findByWarehouse_Id(Long warehouseId, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty"})
+    Page<Operation> findByWarehouse_IdAndType(Long warehouseId, OperationType type, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty"})
+    Page<Operation> findByWarehouse_IdAndStatus(Long warehouseId, OperationStatus status, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty"})
+    Page<Operation> findByWarehouse_IdAndTypeAndStatus(Long warehouseId, OperationType type, OperationStatus status, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty", "items", "items.product", "items.fromCell", "items.toCell"})
+    @Query("""
+            select distinct o from Operation o
+            join o.items i
+            where i.product.id = :productId
+            and (:warehouseId is null or o.warehouse.id = :warehouseId)
+            order by o.createdAt desc
+            """)
+    List<Operation> findRecentByProduct(Long productId, Long warehouseId, Pageable pageable);
+
     @EntityGraph(attributePaths = {"warehouse", "counterparty", "items", "items.product", "items.fromCell", "items.toCell"})
     @Query("SELECT o FROM Operation o WHERE o.status = 'COMPLETED' AND o.createdAt BETWEEN :start AND :end AND o.type = :type")
     List<Operation> findCompletedOperationsByTypeAndPeriod(LocalDateTime start, LocalDateTime end, OperationType type);

@@ -8,6 +8,9 @@ export type EdiDirection = 'INBOUND' | 'OUTBOUND';
 export type EdiMessageStatus = 'RECEIVED' | 'NORMALIZED' | 'PROCESSING' | 'PROCESSED' | 'FAILED';
 export type EdiQueueStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
 export type EdiAuditStatus = 'SUCCESS' | 'FAILED' | 'SKIPPED';
+export type VerificationDecision = 'ACCEPT' | 'REJECT' | 'ACCEPT_PARTIALLY';
+export type DocumentExecutionStage = 'EDI_RECEIVED' | 'DRAFT_CREATED' | 'FACT_CHECK' | 'STOCK_POSTED' | 'COMPLETED' | 'CANCELLED';
+export type DocumentExecutionStatus = 'PENDING' | 'DONE' | 'FAILED';
 
 export const ediMessageTypes: EdiMessageType[] = ['ORDERS', 'DESADV', 'ORDRSP'];
 export const ediMessageStatuses: EdiMessageStatus[] = ['RECEIVED', 'NORMALIZED', 'PROCESSING', 'PROCESSED', 'FAILED'];

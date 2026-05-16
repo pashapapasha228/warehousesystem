@@ -1,7 +1,10 @@
 package com.cuba.warehousesystem.controller;
 
+import com.cuba.warehousesystem.dto.DocumentExecutionStepResponse;
 import com.cuba.warehousesystem.dto.OperationRequest;
 import com.cuba.warehousesystem.dto.OperationResponse;
+import com.cuba.warehousesystem.dto.OperationVerificationRequest;
+import com.cuba.warehousesystem.dto.OperationVerificationResponse;
 import com.cuba.warehousesystem.dto.StockBalanceResponse;
 import com.cuba.warehousesystem.model.OperationStatus;
 import com.cuba.warehousesystem.model.OperationType;
@@ -22,6 +25,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/operations")
@@ -63,14 +68,41 @@ public class OperationController {
     public ResponseEntity<Page<OperationResponse>> getAllOperations(
             @RequestParam(required = false) OperationType type,
             @RequestParam(required = false) OperationStatus status,
+            @RequestParam(required = false) Long warehouseId,
             Pageable pageable
     ) {
-        return ResponseEntity.ok(operationService.getAll(type, status, pageable));
+        return ResponseEntity.ok(operationService.getAll(type, status, warehouseId, pageable));
     }
 
     @GetMapping("/stock-balances")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
-    public ResponseEntity<Page<StockBalanceResponse>> getStockBalance(Pageable pageable) {
-        return ResponseEntity.ok(operationService.getStockBalance(pageable));
+    public ResponseEntity<Page<StockBalanceResponse>> getStockBalance(
+            @RequestParam(required = false) Long warehouseId,
+            Pageable pageable
+    ) {
+        return ResponseEntity.ok(operationService.getStockBalance(warehouseId, pageable));
+    }
+
+    @PostMapping("/{id}/verification")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public ResponseEntity<OperationVerificationResponse> verifyOperation(
+            @PathVariable Long id,
+            @Valid @RequestBody OperationVerificationRequest request,
+            Authentication authentication
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(operationService.verifyOperation(id, request, authentication.getName()));
+    }
+
+    @GetMapping("/{id}/verification")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public ResponseEntity<List<OperationVerificationResponse>> getVerifications(@PathVariable Long id) {
+        return ResponseEntity.ok(operationService.getVerifications(id));
+    }
+
+    @GetMapping("/{id}/execution-chain")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public ResponseEntity<List<DocumentExecutionStepResponse>> getExecutionChain(@PathVariable Long id) {
+        return ResponseEntity.ok(operationService.getExecutionChain(id));
     }
 }

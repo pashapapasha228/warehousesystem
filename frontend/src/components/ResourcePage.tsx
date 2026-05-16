@@ -25,6 +25,7 @@ export function ResourcePage<T extends { id?: number }>({
   fields,
   canEdit,
   description,
+  onView,
 }: {
   title: string;
   queryKey: string;
@@ -33,6 +34,7 @@ export function ResourcePage<T extends { id?: number }>({
   fields: FieldDef[];
   canEdit: (role?: UserRole) => boolean;
   description?: string;
+  onView?: (row: T) => void;
 }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -103,6 +105,7 @@ export function ResourcePage<T extends { id?: number }>({
           }}
           onEdit={allowed ? (row) => { setEditing(row); setFormOpen(true); } : undefined}
           onDelete={allowed ? setDeleting : undefined}
+          onView={onView}
         />
       )}
       <ResourceFormDialog

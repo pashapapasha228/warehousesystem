@@ -26,6 +26,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { counterpartiesApi, operationsApi, productsApi, storageCellsApi, warehousesApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
+import { useWarehouseContext } from '../app/WarehouseContext';
 import { operationTypeLabels } from '../types/enums';
 
 const optionalNumber = z.preprocess((value) => value === '' || value === undefined ? null : value, z.coerce.number().optional().nullable());
@@ -48,7 +49,7 @@ const schema = z.object({
   })).min(1),
 }).superRefine((data, ctx) => {
   data.items.forEach((item, index) => {
-    if ((data.type === 'OUTCOME' || data.type === 'MOVE') && !item.fromCellId) ctx.addIssue({ code: 'custom', path: ['items', index, 'fromCellId'], message: 'Выберите ячейку списания' });
+    if (data.type === 'MOVE' && !item.fromCellId) ctx.addIssue({ code: 'custom', path: ['items', index, 'fromCellId'], message: 'Выберите ячейку списания' });
     if ((data.type === 'INCOME' || data.type === 'MOVE') && !item.toCellId) ctx.addIssue({ code: 'custom', path: ['items', index, 'toCellId'], message: 'Выберите ячейку поступления' });
     if (data.type === 'MOVE' && item.fromCellId && item.toCellId && item.fromCellId === item.toCellId) ctx.addIssue({ code: 'custom', path: ['items', index, 'toCellId'], message: 'Ячейки должны отличаться' });
   });
@@ -58,16 +59,17 @@ type FormData = z.infer<typeof schema>;
 
 export function OperationCreatePage() {
   const navigate = useNavigate();
+  const { warehouseId } = useWarehouseContext();
   const { control, register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
-    defaultValues: { type: 'INCOME', source: 'MANUAL', items: [{ quantity: 1 }] as any },
+    defaultValues: { type: 'INCOME', source: 'MANUAL', warehouseId: warehouseId || undefined, items: [{ quantity: 1 }] as any },
   });
   const items = useFieldArray({ control, name: 'items' });
   const type = watch('type');
   const products = useQuery({ queryKey: ['products-select'], queryFn: () => productsApi.list({ page: 0, size: 200, sort: 'name,asc' }) });
   const warehouses = useQuery({ queryKey: ['warehouses-select'], queryFn: () => warehousesApi.list({ page: 0, size: 200, sort: 'code,asc' }) });
   const counterparties = useQuery({ queryKey: ['counterparties-select'], queryFn: () => counterpartiesApi.list({ page: 0, size: 200, sort: 'name,asc' }) });
-  const cells = useQuery({ queryKey: ['cells-select'], queryFn: () => storageCellsApi.list({ page: 0, size: 500, sort: 'code,asc' }) });
+  const cells = useQuery({ queryKey: ['cells-select', warehouseId], queryFn: () => storageCellsApi.list({ page: 0, size: 500, sort: 'code,asc', warehouseId: warehouseId || undefined }) });
 
   const mutation = useMutation({
     mutationFn: operationsApi.create,
@@ -127,7 +129,7 @@ export function OperationCreatePage() {
                 {(type === 'OUTCOME' || type === 'MOVE') && (
                   <Grid size={{ xs: 12, md: 2 }}>
                     <Controller control={control} name={`items.${index}.fromCellId`} render={({ field }) => (
-                      <FormControl fullWidth error={!!errors.items?.[index]?.fromCellId}><InputLabel>Из ячейки</InputLabel><Select {...field} label="Из ячейки" value={field.value || ''}>{cells.data?.content.map((c) => <MenuItem key={c.id} value={c.id}>{c.warehouseCode}/{c.code}</MenuItem>)}</Select></FormControl>
+                      <FormControl fullWidth error={!!errors.items?.[index]?.fromCellId}><InputLabel>Из ячейки</InputLabel><Select {...field} label="Из ячейки" value={field.value || ''}><MenuItem value="">Auto pick</MenuItem>{cells.data?.content.map((c) => <MenuItem key={c.id} value={c.id}>{c.warehouseCode}/{c.code}</MenuItem>)}</Select></FormControl>
                     )} />
                   </Grid>
                 )}

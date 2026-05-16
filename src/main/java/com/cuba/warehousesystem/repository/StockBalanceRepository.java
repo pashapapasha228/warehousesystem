@@ -6,6 +6,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -24,10 +25,23 @@ public interface StockBalanceRepository extends JpaRepository<StockBalance, Stoc
     List<StockBalance> findByProduct_Id(Long productId);
 
     @EntityGraph(attributePaths = {"product", "cell", "cell.warehouse"})
+    List<StockBalance> findByProduct_IdAndCell_Warehouse_Id(Long productId, Long warehouseId);
+
+    @EntityGraph(attributePaths = {"product", "cell", "cell.warehouse"})
     List<StockBalance> findByCell_Id(Long cellId);
 
     @EntityGraph(attributePaths = {"product", "cell", "cell.warehouse"})
     List<StockBalance> findByCell_Warehouse_Id(Long warehouseId);
+
+    @EntityGraph(attributePaths = {"product", "cell", "cell.warehouse"})
+    Page<StockBalance> findByCell_Warehouse_Id(Long warehouseId, Pageable pageable);
+
+    @Query("""
+            select coalesce(sum(sb.quantity - sb.reservedQuantity), 0)
+            from StockBalance sb
+            where sb.product.id = :productId and sb.cell.warehouse.id = :warehouseId
+            """)
+    Long sumAvailableByProductAndWarehouse(Long productId, Long warehouseId);
 
     @Override
     @EntityGraph(attributePaths = {"product", "cell", "cell.warehouse"})

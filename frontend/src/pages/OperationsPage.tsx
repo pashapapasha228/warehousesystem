@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { operationsApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
+import { useWarehouseContext } from '../app/WarehouseContext';
 import { ErrorState, LoadingState } from '../components/feedback/StateViews';
 import { ResourceTable } from '../components/tables/ResourceTable';
 import { operationStatusLabels, operationTypeLabels, type OperationStatus, type OperationType } from '../types/enums';
@@ -18,9 +19,10 @@ export function OperationsPage() {
   const [status, setStatus] = useState('');
   const tableSort = useTableSort('id', 'desc');
   const navigate = useNavigate();
+  const { warehouseId } = useWarehouseContext();
   const query = useQuery({
-    queryKey: ['operations', page, size, type, status, tableSort.sort],
-    queryFn: () => operationsApi.list({ page, size, sort: tableSort.sort, type: type || undefined, status: status || undefined }),
+    queryKey: ['operations', page, size, type, status, warehouseId, tableSort.sort],
+    queryFn: () => operationsApi.list({ page, size, sort: tableSort.sort, type: type || undefined, status: status || undefined, warehouseId: warehouseId || undefined }),
   });
 
   return (
