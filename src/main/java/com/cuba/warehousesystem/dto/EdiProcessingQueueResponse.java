@@ -1,6 +1,5 @@
 package com.cuba.warehousesystem.dto;
 
-import com.cuba.warehousesystem.model.EdiQueueStatus;
 import com.cuba.warehousesystem.model.EdiMessageStatus;
 import com.cuba.warehousesystem.model.EdiMessageType;
 
@@ -16,7 +15,6 @@ public record EdiProcessingQueueResponse(
         String partnerCode,
         Long relatedOperationId,
         String normalizedPayload,
-        EdiQueueStatus status,
         Integer attemptCount,
         LocalDateTime scheduledAt,
         LocalDateTime startedAt,

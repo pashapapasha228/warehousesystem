@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { ResourcePage } from '../components/ResourcePage';
 import { BoolChip, FillBar } from '../components/tables/ResourceTable';
 import { counterpartiesApi, productsApi, storageCellsApi, warehousesApi } from '../api/resourcesApi';
+import { useWarehouseContext } from '../app/WarehouseContext';
 import { canManageCatalogs } from '../utils/permissions';
 import { counterpartyTypeLabels } from '../types/enums';
 import { fillPercent, n } from '../utils/format';
@@ -66,11 +67,15 @@ export function WarehousesPage() {
 }
 
 export function StorageCellsPage() {
+  const { warehouseId, selectedWarehouse } = useWarehouseContext();
+
   return (
     <ResourcePage
       title="Ячейки хранения"
+      description={selectedWarehouse ? `Склад: ${selectedWarehouse.code} · ${selectedWarehouse.name}` : 'Все склады'}
       queryKey="storage-cells"
       api={storageCellsApi}
+      listParams={{ warehouseId: warehouseId || undefined }}
       canEdit={canManageCatalogs}
       columns={[
         { key: 'warehouseCode', label: 'Склад' },

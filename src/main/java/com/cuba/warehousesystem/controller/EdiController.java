@@ -10,7 +10,6 @@ import com.cuba.warehousesystem.dto.EdiProcessingQueueResponse;
 import com.cuba.warehousesystem.dto.EdiSimulationRequest;
 import com.cuba.warehousesystem.model.EdiMessageStatus;
 import com.cuba.warehousesystem.model.EdiMessageType;
-import com.cuba.warehousesystem.model.EdiQueueStatus;
 import com.cuba.warehousesystem.service.EdiProcessingService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -73,19 +72,20 @@ public class EdiController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ResponseEntity<Page<EdiMessageResponse>> getMessages(
             @RequestParam(required = false) EdiMessageType type,
+            @RequestParam(required = false) EdiMessageStatus ediStatus,
             @RequestParam(required = false) EdiMessageStatus status,
             Pageable pageable
     ) {
-        return ResponseEntity.ok(ediProcessingService.getMessages(type, status, pageable));
+        return ResponseEntity.ok(ediProcessingService.getMessages(type, ediStatus == null ? status : ediStatus, pageable));
     }
 
     @GetMapping("/queue")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ResponseEntity<Page<EdiProcessingQueueResponse>> getQueue(
-            @RequestParam(required = false) EdiQueueStatus status,
+            @RequestParam(required = false) EdiMessageStatus ediStatus,
             Pageable pageable
     ) {
-        return ResponseEntity.ok(ediProcessingService.getQueue(status, pageable));
+        return ResponseEntity.ok(ediProcessingService.getQueue(ediStatus, pageable));
     }
 
     @PostMapping("/queue/{id}/process")

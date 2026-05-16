@@ -46,6 +46,7 @@ const sortAliases: Record<string, Record<string, string>> = {
   },
   '/edi/queue': {
     ediMessageId: 'ediMessage.id',
+    messageStatus: 'ediMessage.status',
     messageRef: 'ediMessage.messageRef',
     partnerCode: 'ediMessage.partner.code',
   },

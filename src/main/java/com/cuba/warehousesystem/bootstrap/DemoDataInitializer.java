@@ -15,7 +15,6 @@ import com.cuba.warehousesystem.model.EdiMessageStatus;
 import com.cuba.warehousesystem.model.EdiMessageType;
 import com.cuba.warehousesystem.model.EdiPartner;
 import com.cuba.warehousesystem.model.EdiProcessingQueue;
-import com.cuba.warehousesystem.model.EdiQueueStatus;
 import com.cuba.warehousesystem.model.Operation;
 import com.cuba.warehousesystem.model.OperationItem;
 import com.cuba.warehousesystem.model.OperationSource;
@@ -954,12 +953,6 @@ public class DemoDataInitializer implements ApplicationRunner {
     private void seedQueue(EdiMessage message, int i, EdiMessageStatus messageStatus) {
         EdiProcessingQueue queue = ediProcessingQueueRepository.findByEdiMessage_Id(message.getId()).orElseGet(EdiProcessingQueue::new);
         queue.setEdiMessage(message);
-        queue.setStatus(switch (messageStatus) {
-            case RECEIVED, NORMALIZED -> EdiQueueStatus.PENDING;
-            case PROCESSING -> EdiQueueStatus.RUNNING;
-            case FAILED -> EdiQueueStatus.FAILED;
-            case PROCESSED, COMPLETED -> EdiQueueStatus.DONE;
-        });
         queue.setAttemptCount(messageStatus == EdiMessageStatus.FAILED ? 3 : messageStatus == EdiMessageStatus.PROCESSING ? 1 : 0);
         queue.setScheduledAt(message.getReceivedAt().plusMinutes(2));
         queue.setStartedAt(messageStatus == EdiMessageStatus.PROCESSING || messageStatus == EdiMessageStatus.PROCESSED || messageStatus == EdiMessageStatus.FAILED ? message.getReceivedAt().plusMinutes(3) : null);

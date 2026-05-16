@@ -14,7 +14,6 @@ import com.cuba.warehousesystem.dto.TurnoverReport;
 import com.cuba.warehousesystem.model.AuditLog;
 import com.cuba.warehousesystem.model.EdiMessageStatus;
 import com.cuba.warehousesystem.model.EdiMessageType;
-import com.cuba.warehousesystem.model.EdiQueueStatus;
 import com.cuba.warehousesystem.model.Operation;
 import com.cuba.warehousesystem.model.OperationItem;
 import com.cuba.warehousesystem.model.OperationStatus;
@@ -236,8 +235,9 @@ public class ReportService {
                 ediMessageRepository.count(),
                 byStatus,
                 byType,
-                ediProcessingQueueRepository.countByStatus(EdiQueueStatus.PENDING),
-                ediProcessingQueueRepository.countByStatus(EdiQueueStatus.FAILED)
+                ediProcessingQueueRepository.countByEdiMessage_Status(EdiMessageStatus.RECEIVED)
+                        + ediProcessingQueueRepository.countByEdiMessage_Status(EdiMessageStatus.NORMALIZED),
+                ediProcessingQueueRepository.countByEdiMessage_Status(EdiMessageStatus.FAILED)
         );
     }
 

@@ -15,7 +15,7 @@ import { ResourceTable } from '../components/tables/ResourceTable';
 import { canManageEdi } from '../utils/permissions';
 import { fmtDate } from '../utils/format';
 import { useTableSort } from '../utils/sorting';
-import { ediMessageStatuses, ediMessageTypeLabels, ediMessageTypes, ediQueueStatuses, type EdiMessageType } from '../types/enums';
+import { ediMessageStatuses, ediMessageTypeLabels, ediMessageTypes, type EdiMessageStatus, type EdiMessageType } from '../types/enums';
 import type { EdiMapping, EdiPartner, EdiQueueItem, Product, StockBalance, StorageCell } from '../types/api';
 
 const inboundPayloadExamples: Record<EdiMessageType, string> = {
@@ -188,7 +188,7 @@ export function EdiPartnerCardPage() {
                   { key: 'externalProductCode', label: 'Внешний код товара' },
                   { key: 'internalSku', label: 'Внутренний SKU' },
                   { key: 'internalProductName', label: 'Название' },
-                  { key: 'isActive', label: 'Статус', render: (row) => <BoolChip value={row.isActive} /> },
+                  { key: 'isActive', label: 'Активность', render: (row) => <BoolChip value={row.isActive} /> },
                 ]}
               />
             )}
@@ -226,7 +226,7 @@ function EdiPartnerSummary({ partner }: { partner: EdiPartner }) {
           <InfoItem label="Склады" value={partner.warehouses?.map((warehouse) => warehouse.code).join(', ') || '—'} />
           <InfoItem label="Входящие" value={<BoolChip value={partner.inboundEnabled} />} />
           <InfoItem label="Исходящие" value={<BoolChip value={partner.outboundEnabled} />} />
-          <InfoItem label="Статус" value={<BoolChip value={partner.isActive} />} />
+          <InfoItem label="Активность" value={<BoolChip value={partner.isActive} />} />
         </Box>
       </CardContent>
     </Card>
@@ -309,8 +309,8 @@ function MappingDialog({
             </Select>
           </FormControl>
           <FormControl fullWidth>
-            <InputLabel>Статус</InputLabel>
-            <Select label="Статус" value={isActive ? 'true' : 'false'} onChange={(event) => setIsActive(event.target.value === 'true')}>
+            <InputLabel>Активность</InputLabel>
+            <Select label="Активность" value={isActive ? 'true' : 'false'} onChange={(event) => setIsActive(event.target.value === 'true')}>
               <MenuItem value="true">Активно</MenuItem>
               <MenuItem value="false">Выключено</MenuItem>
             </Select>
@@ -329,22 +329,22 @@ export function EdiMessagesPage() {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [type, setType] = useState('');
-  const [status, setStatus] = useState('');
+  const [ediStatus, setEdiStatus] = useState('');
   const tableSort = useTableSort('id', 'desc');
-  const query = useQuery({ queryKey: ['edi-messages', page, size, type, status, tableSort.sort], queryFn: () => ediApi.messages({ page, size, sort: tableSort.sort, type: type || undefined, status: status || undefined }) });
+  const query = useQuery({ queryKey: ['edi-messages', page, size, type, ediStatus, tableSort.sort], queryFn: () => ediApi.messages({ page, size, sort: tableSort.sort, type: type || undefined, ediStatus: ediStatus || undefined }) });
   return (
     <Stack spacing={2}>
       <Typography variant="h4">EDI-сообщения</Typography>
       <Box display="flex" gap={2} flexWrap="wrap">
         <FormControl sx={{ minWidth: 180 }}><InputLabel>Тип</InputLabel><Select label="Тип" value={type} onChange={(e) => setType(e.target.value)}><MenuItem value="">Все</MenuItem>{ediMessageTypes.map((v) => <MenuItem key={v} value={v}>{ediMessageTypeLabels[v]}</MenuItem>)}</Select></FormControl>
-        <FormControl sx={{ minWidth: 180 }}><InputLabel>Статус</InputLabel><Select label="Статус" value={status} onChange={(e) => setStatus(e.target.value)}><MenuItem value="">Все</MenuItem>{ediMessageStatuses.map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
+        <FormControl sx={{ minWidth: 180 }}><InputLabel>Статус EDI</InputLabel><Select label="Статус EDI" value={ediStatus} onChange={(e) => setEdiStatus(e.target.value)}><MenuItem value="">Все</MenuItem>{ediMessageStatuses.map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
       </Box>
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message={getErrorMessage(query.error)} />}
       {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} {...tableSort.tableSortProps} onSortChange={(sortBy, sortDirection) => { tableSort.tableSortProps.onSortChange(sortBy, sortDirection); setPage(0); }} columns={[
         { key: 'id', label: 'ID' },
         { key: 'messageType', label: 'Тип' },
-        { key: 'status', label: 'Статус' },
+        { key: 'status', label: 'Статус EDI' },
         { key: 'partnerCode', label: 'Партнер' },
         { key: 'documentNumber', label: 'Документ' },
         { key: 'relatedOperationNumber', label: 'Операция' },
@@ -411,12 +411,12 @@ export function EdiQueuePage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
-  const [status, setStatus] = useState('');
+  const [ediStatus, setEdiStatus] = useState<EdiMessageStatus | ''>('');
   const [selected, setSelected] = useState<EdiQueueItem | null>(null);
   const [allocations, setAllocations] = useState<AllocationState>({});
   const [notice, setNotice] = useState('');
   const tableSort = useTableSort('id', 'desc');
-  const query = useQuery({ queryKey: ['edi-queue', page, size, status, tableSort.sort], queryFn: () => ediApi.queue({ page, size, sort: tableSort.sort, status: status || undefined }) });
+  const query = useQuery({ queryKey: ['edi-queue', page, size, ediStatus, tableSort.sort], queryFn: () => ediApi.queue({ page, size, sort: tableSort.sort, ediStatus: ediStatus || undefined }) });
   const selectedPayload = parsePayload(selected?.normalizedPayload);
   const cells = useQuery({
     queryKey: ['edi-process-cells', selectedPayload?.warehouseId],
@@ -489,22 +489,20 @@ export function EdiQueuePage() {
     <Stack spacing={2}>
       <Typography variant="h4">Очередь EDI</Typography>
       {notice && <Alert severity={notice.startsWith('EDI') ? 'success' : 'error'} onClose={() => setNotice('')}>{notice}</Alert>}
-      <FormControl sx={{ maxWidth: 220 }}><InputLabel>Статус</InputLabel><Select label="Статус" value={status} onChange={(e) => setStatus(e.target.value)}><MenuItem value="">Все</MenuItem>{ediQueueStatuses.map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
+      <FormControl sx={{ maxWidth: 220 }}><InputLabel>Статус EDI</InputLabel><Select label="Статус EDI" value={ediStatus} onChange={(e) => setEdiStatus(e.target.value as EdiMessageStatus | '')}><MenuItem value="">Все</MenuItem>{ediMessageStatuses.map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message={getErrorMessage(query.error)} />}
       {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} {...tableSort.tableSortProps} onSortChange={(sortBy, sortDirection) => { tableSort.tableSortProps.onSortChange(sortBy, sortDirection); setPage(0); }} columns={[
         { key: 'id', label: 'ID' },
-        { key: 'ediMessageId', label: 'Сообщение' },
         { key: 'messageType', label: 'Тип' },
         { key: 'messageStatus', label: 'Статус EDI' },
         { key: 'messageRef', label: 'Ref' },
         { key: 'documentNumber', label: 'Документ' },
         { key: 'partnerCode', label: 'Партнер' },
-        { key: 'status', label: 'Статус' },
         { key: 'attemptCount', label: 'Попытки' },
         { key: 'scheduledAt', label: 'Запланировано', render: (r) => fmtDate(r.scheduledAt) },
         { key: 'lastError', label: 'Ошибка' },
-        { key: 'process', label: 'Обработка', sortKey: false, render: (row) => row.status === 'PENDING' || row.status === 'FAILED' ? <Button size="small" onClick={() => { setSelected(row); setAllocations({}); }}>Обработать</Button> : row.relatedOperationId ? <Button size="small" href={`/operations/${row.relatedOperationId}`}>Операция</Button> : '—' },
+        { key: 'process', label: 'Обработка', sortKey: false, render: (row) => canProcessEdiMessage(row.messageStatus) ? <Button size="small" onClick={() => { setSelected(row); setAllocations({}); }}>Обработать</Button> : row.relatedOperationId ? <Button size="small" href={`/operations/${row.relatedOperationId}`}>Операция</Button> : '—' },
       ]} />}
       {selected && selectedPayload && (
         <Card>
@@ -541,6 +539,10 @@ export function EdiQueuePage() {
       )}
     </Stack>
   );
+}
+
+function canProcessEdiMessage(status: EdiMessageStatus) {
+  return status === 'RECEIVED' || status === 'NORMALIZED' || status === 'FAILED';
 }
 
 type EdiPayloadItem = {
@@ -768,7 +770,7 @@ export function EdiAuditPage() {
       {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} {...tableSort.tableSortProps} onSortChange={(sortBy, sortDirection) => { tableSort.tableSortProps.onSortChange(sortBy, sortDirection); setPage(0); }} columns={[
         { key: 'ediMessageId', label: 'Сообщение' },
         { key: 'stage', label: 'Этап' },
-        { key: 'status', label: 'Статус' },
+        { key: 'status', label: 'Статус аудита' },
         { key: 'details', label: 'Детали' },
         { key: 'createdAt', label: 'Дата', render: (r) => fmtDate(r.createdAt) },
       ]} />}

@@ -4,7 +4,6 @@ import type {
   EdiDirection,
   EdiMessageStatus,
   EdiMessageType,
-  EdiQueueStatus,
   VerificationDecision,
   DocumentExecutionStage,
   DocumentExecutionStatus,
@@ -249,7 +248,6 @@ export type EdiQueueItem = {
   partnerCode?: string;
   relatedOperationId?: number;
   normalizedPayload?: string;
-  status: EdiQueueStatus;
   attemptCount: number;
   scheduledAt?: string;
   startedAt?: string;

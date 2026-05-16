@@ -25,7 +25,6 @@ import com.cuba.warehousesystem.model.EdiMessageStatus;
 import com.cuba.warehousesystem.model.EdiMessageType;
 import com.cuba.warehousesystem.model.EdiPartner;
 import com.cuba.warehousesystem.model.EdiProcessingQueue;
-import com.cuba.warehousesystem.model.EdiQueueStatus;
 import com.cuba.warehousesystem.model.OperationSource;
 import com.cuba.warehousesystem.model.OperationType;
 import com.cuba.warehousesystem.model.Product;
@@ -111,12 +110,15 @@ public class EdiProcessingService {
     public EdiProcessResultResponse processQueueItem(Long queueItemId, EdiProcessRequest request, String username) {
         EdiProcessingQueue queueItem = ediProcessingQueueRepository.findById(queueItemId)
                 .orElseThrow(() -> new EntityNotFoundException("EDI processing queue item not found"));
-        if (queueItem.getStatus() == EdiQueueStatus.DONE) {
-            return toProcessResult(queueItem);
-        }
 
         EdiMessage message = queueItem.getEdiMessage();
-        queueItem.setStatus(EdiQueueStatus.RUNNING);
+        if (message.getStatus() == EdiMessageStatus.PROCESSED || message.getStatus() == EdiMessageStatus.COMPLETED) {
+            return toProcessResult(queueItem);
+        }
+        if (message.getStatus() == EdiMessageStatus.PROCESSING) {
+            throw new BadRequestException("EDI message is already being processed.");
+        }
+
         queueItem.setAttemptCount(queueItem.getAttemptCount() + 1);
         queueItem.setStartedAt(LocalDateTime.now());
         queueItem.setLastError(null);
@@ -133,7 +135,6 @@ public class EdiProcessingService {
             message.setStatus(EdiMessageStatus.PROCESSED);
             message.setProcessedAt(LocalDateTime.now());
             message.setErrorMessage(null);
-            queueItem.setStatus(EdiQueueStatus.DONE);
             queueItem.setFinishedAt(LocalDateTime.now());
             EdiProcessingQueue savedQueue = ediProcessingQueueRepository.save(queueItem);
             eventPublisher.publishEvent(new EdiMessageProcessedEvent(
@@ -149,7 +150,6 @@ public class EdiProcessingService {
             message.setStatus(EdiMessageStatus.FAILED);
             message.setProcessedAt(LocalDateTime.now());
             message.setErrorMessage(ex.getMessage());
-            queueItem.setStatus(EdiQueueStatus.FAILED);
             queueItem.setFinishedAt(LocalDateTime.now());
             queueItem.setLastError(ex.getMessage());
             EdiProcessingQueue savedQueue = ediProcessingQueueRepository.save(queueItem);
@@ -176,14 +176,14 @@ public class EdiProcessingService {
     }
 
     @Transactional(readOnly = true)
-    public Page<EdiMessageResponse> getMessages(EdiMessageType type, EdiMessageStatus status, Pageable pageable) {
+    public Page<EdiMessageResponse> getMessages(EdiMessageType type, EdiMessageStatus ediStatus, Pageable pageable) {
         Page<EdiMessage> messages;
-        if (type != null && status != null) {
-            messages = ediMessageRepository.findByMessageTypeAndStatus(type, status, pageable);
+        if (type != null && ediStatus != null) {
+            messages = ediMessageRepository.findByMessageTypeAndStatus(type, ediStatus, pageable);
         } else if (type != null) {
             messages = ediMessageRepository.findByMessageType(type, pageable);
-        } else if (status != null) {
-            messages = ediMessageRepository.findByStatus(status, pageable);
+        } else if (ediStatus != null) {
+            messages = ediMessageRepository.findByStatus(ediStatus, pageable);
         } else {
             messages = ediMessageRepository.findAll(pageable);
         }
@@ -191,10 +191,10 @@ public class EdiProcessingService {
     }
 
     @Transactional(readOnly = true)
-    public Page<EdiProcessingQueueResponse> getQueue(EdiQueueStatus status, Pageable pageable) {
-        Page<EdiProcessingQueue> queue = status == null
+    public Page<EdiProcessingQueueResponse> getQueue(EdiMessageStatus ediStatus, Pageable pageable) {
+        Page<EdiProcessingQueue> queue = ediStatus == null
                 ? ediProcessingQueueRepository.findAll(pageable)
-                : ediProcessingQueueRepository.findByStatus(status, pageable);
+                : ediProcessingQueueRepository.findByEdiMessage_Status(ediStatus, pageable);
         return queue.map(this::toResponse);
     }
 
@@ -641,7 +641,6 @@ public class EdiProcessingService {
                 message.getPartner() == null ? null : message.getPartner().getCode(),
                 message.getRelatedOperation() == null ? null : message.getRelatedOperation().getId(),
                 message.getNormalizedPayload(),
-                queueItem.getStatus(),
                 queueItem.getAttemptCount(),
                 queueItem.getScheduledAt(),
                 queueItem.getStartedAt(),
@@ -666,7 +665,6 @@ public class EdiProcessingService {
         return new EdiProcessResultResponse(
                 queueItem.getId(),
                 message.getId(),
-                queueItem.getStatus(),
                 message.getStatus(),
                 message.getRelatedOperation() == null ? null : message.getRelatedOperation().getId(),
                 queueItem.getLastError()

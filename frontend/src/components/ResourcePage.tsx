@@ -1,7 +1,7 @@
 import { Add, Clear, Refresh, Search } from '@mui/icons-material';
 import { Alert, Box, Button, IconButton, InputAdornment, Snackbar, Stack, TextField, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getErrorMessage } from '../api/http';
 import { useAuth } from '../auth/useAuth';
 import { ConfirmDialog } from './feedback/ConfirmDialog';
@@ -26,6 +26,7 @@ export function ResourcePage<T extends { id?: number }>({
   canEdit,
   description,
   onView,
+  listParams,
 }: {
   title: string;
   queryKey: string;
@@ -35,6 +36,7 @@ export function ResourcePage<T extends { id?: number }>({
   canEdit: (role?: UserRole) => boolean;
   description?: string;
   onView?: (row: T) => void;
+  listParams?: Record<string, unknown>;
 }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -49,13 +51,19 @@ export function ResourcePage<T extends { id?: number }>({
   const [searchText, setSearchText] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
   const allowed = canEdit(user?.role);
+  const listParamsKey = JSON.stringify(listParams ?? {});
+
+  useEffect(() => {
+    setPage(0);
+  }, [listParamsKey]);
 
   const query = useQuery({
-    queryKey: [queryKey, page, size, sortBy, sortDirection, appliedSearch],
+    queryKey: [queryKey, page, size, sortBy, sortDirection, appliedSearch, listParamsKey],
     queryFn: () => api.list({
       page,
       size,
       sort: `${sortBy},${sortDirection}`,
+      ...(listParams ?? {}),
       ...(appliedSearch ? { search: appliedSearch } : {}),
     }),
   });

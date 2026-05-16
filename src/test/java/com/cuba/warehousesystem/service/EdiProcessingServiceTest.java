@@ -15,7 +15,6 @@ import com.cuba.warehousesystem.model.EdiMessageStatus;
 import com.cuba.warehousesystem.model.EdiMessageType;
 import com.cuba.warehousesystem.model.EdiPartner;
 import com.cuba.warehousesystem.model.EdiProcessingQueue;
-import com.cuba.warehousesystem.model.EdiQueueStatus;
 import com.cuba.warehousesystem.model.Operation;
 import com.cuba.warehousesystem.model.OperationSource;
 import com.cuba.warehousesystem.model.OperationStatus;
@@ -178,7 +177,7 @@ class EdiProcessingServiceTest {
 
         EdiProcessResultResponse result = service.processQueueItem(1L, "manager");
 
-        assertThat(result.queueStatus()).isEqualTo(EdiQueueStatus.FAILED);
+        assertThat(result.messageStatus()).isEqualTo(EdiMessageStatus.FAILED);
         assertThat(result.errorMessage()).contains("toCellId");
         verify(operationService, never()).createDraftOperation(any(), any());
     }
@@ -191,7 +190,7 @@ class EdiProcessingServiceTest {
 
         EdiProcessResultResponse result = service.processQueueItem(1L, "manager");
 
-        assertThat(result.queueStatus()).isEqualTo(EdiQueueStatus.FAILED);
+        assertThat(result.messageStatus()).isEqualTo(EdiMessageStatus.FAILED);
         assertThat(result.errorMessage()).contains("No active EDI product mapping");
         verify(operationService, never()).createDraftOperation(any(), any());
     }
@@ -203,7 +202,7 @@ class EdiProcessingServiceTest {
 
         EdiProcessResultResponse result = service.processQueueItem(1L, "manager");
 
-        assertThat(result.queueStatus()).isEqualTo(EdiQueueStatus.FAILED);
+        assertThat(result.messageStatus()).isEqualTo(EdiMessageStatus.FAILED);
         assertThat(result.errorMessage()).contains("inactive");
         verify(operationService, never()).createDraftOperation(any(), any());
     }
@@ -221,7 +220,6 @@ class EdiProcessingServiceTest {
         EdiProcessingQueue queue = new EdiProcessingQueue();
         queue.setId(1L);
         queue.setEdiMessage(message);
-        queue.setStatus(EdiQueueStatus.PENDING);
         queue.setAttemptCount(0);
         queue.setScheduledAt(LocalDateTime.now());
         when(ediProcessingQueueRepository.findById(1L)).thenReturn(Optional.of(queue));
