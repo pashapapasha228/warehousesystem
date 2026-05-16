@@ -1,6 +1,8 @@
 package com.cuba.warehousesystem.service;
 
 import com.cuba.warehousesystem.dto.EdiAuditLogResponse;
+import com.cuba.warehousesystem.dto.EdiCustomerReceiptRequest;
+import com.cuba.warehousesystem.dto.EdiProcessRequest;
 import com.cuba.warehousesystem.dto.EdiSimulationRequest;
 import com.cuba.warehousesystem.dto.EdiMessageReceiveRequest;
 import com.cuba.warehousesystem.dto.EdiMessageResponse;
@@ -28,6 +30,7 @@ import com.cuba.warehousesystem.model.OperationSource;
 import com.cuba.warehousesystem.model.OperationType;
 import com.cuba.warehousesystem.model.Product;
 import com.cuba.warehousesystem.model.StockBalance;
+import com.cuba.warehousesystem.model.StorageCell;
 import com.cuba.warehousesystem.repository.EdiAuditLogRepository;
 import com.cuba.warehousesystem.repository.EdiMappingConfigRepository;
 import com.cuba.warehousesystem.repository.EdiMessageRepository;
@@ -51,8 +54,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -101,7 +107,7 @@ public class EdiProcessingService {
         return toResponse(saved);
     }
 
-    public EdiProcessResultResponse processQueueItem(Long queueItemId, String username) {
+    public EdiProcessResultResponse processQueueItem(Long queueItemId, EdiProcessRequest request, String username) {
         EdiProcessingQueue queueItem = ediProcessingQueueRepository.findById(queueItemId)
                 .orElseThrow(() -> new EntityNotFoundException("EDI processing queue item not found"));
         if (queueItem.getStatus() == EdiQueueStatus.DONE) {
@@ -116,7 +122,7 @@ public class EdiProcessingService {
         message.setStatus(EdiMessageStatus.PROCESSING);
 
         try {
-            OperationResponse operationResponse = createOperationFromMessage(message, username);
+            OperationResponse operationResponse = createOperationFromMessage(message, request, username);
             if (operationResponse != null) {
                 com.cuba.warehousesystem.model.Operation operation = findOperationReference(operationResponse.id());
                 message.setRelatedOperation(operation);
@@ -158,6 +164,10 @@ public class EdiProcessingService {
         }
     }
 
+    public EdiProcessResultResponse processQueueItem(Long queueItemId, String username) {
+        return processQueueItem(queueItemId, new EdiProcessRequest(List.of()), username);
+    }
+
     @Transactional(readOnly = true)
     public EdiMessageResponse getMessage(Long id) {
         return toResponse(ediMessageRepository.findById(id)
@@ -196,20 +206,10 @@ public class EdiProcessingService {
     }
 
     public EdiMessageResponse simulateSupplierDesadv(EdiSimulationRequest request) {
-        Product product = productRepository.findById(request.productId())
-                .orElseThrow(() -> new EntityNotFoundException("Product not found"));
         EdiPartner partner = ediPartnerRepository.findById(request.partnerId())
                 .orElseThrow(() -> new EntityNotFoundException("EDI partner not found"));
         if (partner.getCounterparty() == null || partner.getCounterparty().getType() != CounterpartyType.SUPPLIER) {
             throw new BadRequestException("Supplier simulation requires an EDI partner linked to a supplier.");
-        }
-        Long toCellId = request.cellId();
-        if (toCellId == null) {
-            toCellId = storageCellRepository.findByWarehouse_Id(request.warehouseId()).stream()
-                    .filter(cell -> Boolean.TRUE.equals(cell.getIsActive()))
-                    .findFirst()
-                    .map(com.cuba.warehousesystem.model.StorageCell::getId)
-                    .orElseThrow(() -> new BadRequestException("No active storage cell found for warehouse."));
         }
         return receiveInbound(new EdiMessageReceiveRequest(
                 partner.getId(),
@@ -222,39 +222,17 @@ public class EdiProcessingService {
                 objectMapper.valueToTree(Map.of(
                         "warehouseId", request.warehouseId(),
                         "documentDate", LocalDate.now().toString(),
-                        "items", List.of(Map.of(
-                                "productId", product.getId(),
-                                "quantity", request.quantity(),
-                                "toCellId", toCellId,
-                                "unitPrice", BigDecimal.ZERO,
-                                "unitOfMeasure", product.getUnitOfMeasure()
-                        ))
+                        "items", simulationItems(partner, EdiMessageType.DESADV, request.items())
                 ))
         ));
     }
 
     public EdiMessageResponse simulateCustomerOrders(EdiSimulationRequest request) {
-        Product product = productRepository.findById(request.productId())
-                .orElseThrow(() -> new EntityNotFoundException("Product not found"));
         EdiPartner partner = ediPartnerRepository.findById(request.partnerId())
                 .orElseThrow(() -> new EntityNotFoundException("EDI partner not found"));
         if (partner.getCounterparty() == null || partner.getCounterparty().getType() != CounterpartyType.CUSTOMER) {
             throw new BadRequestException("Customer simulation requires an EDI partner linked to a customer.");
         }
-        Map<String, Object> item = request.cellId() == null
-                ? Map.of(
-                "productId", product.getId(),
-                "quantity", request.quantity(),
-                "unitPrice", BigDecimal.ZERO,
-                "unitOfMeasure", product.getUnitOfMeasure()
-        )
-                : Map.of(
-                "productId", product.getId(),
-                "quantity", request.quantity(),
-                "fromCellId", request.cellId(),
-                "unitPrice", BigDecimal.ZERO,
-                "unitOfMeasure", product.getUnitOfMeasure()
-        );
         return receiveInbound(new EdiMessageReceiveRequest(
                 partner.getId(),
                 null,
@@ -266,12 +244,84 @@ public class EdiProcessingService {
                 objectMapper.valueToTree(Map.of(
                         "warehouseId", request.warehouseId(),
                         "documentDate", LocalDate.now().toString(),
-                        "items", List.of(item)
+                        "items", simulationItems(partner, EdiMessageType.ORDERS, request.items())
                 ))
         ));
     }
 
-    private OperationResponse createOperationFromMessage(EdiMessage message, String username) {
+    public EdiMessageResponse simulateCustomerReceipt(EdiCustomerReceiptRequest request, String username) {
+        EdiMessage sourceMessage = resolveReceiptSourceMessage(request);
+        if (sourceMessage.getRelatedOperation() == null) {
+            throw new BadRequestException("Customer receipt requires a related OUTCOME operation.");
+        }
+        if (sourceMessage.getMessageType() != EdiMessageType.ORDERS) {
+            throw new BadRequestException("Customer receipt can complete only ORDERS flow.");
+        }
+
+        operationService.finalizeShippedOperation(
+                sourceMessage.getRelatedOperation().getId(),
+                username == null ? "system" : username,
+                "Customer receipt confirmation"
+        );
+
+        sourceMessage.setStatus(EdiMessageStatus.COMPLETED);
+        sourceMessage.setProcessedAt(LocalDateTime.now());
+        sourceMessage.setErrorMessage(null);
+        EdiMessage saved = ediMessageRepository.save(sourceMessage);
+        return toResponse(saved);
+    }
+
+    private EdiMessage resolveReceiptSourceMessage(EdiCustomerReceiptRequest request) {
+        if (request.messageId() != null) {
+            return ediMessageRepository.findById(request.messageId())
+                    .orElseThrow(() -> new EntityNotFoundException("EDI message not found"));
+        }
+        if (request.operationId() != null) {
+            return ediMessageRepository.findByRelatedOperation_Id(request.operationId())
+                    .orElseThrow(() -> new EntityNotFoundException("EDI message not found for operation"));
+        }
+        throw new BadRequestException("messageId or operationId is required.");
+    }
+
+    private List<Map<String, Object>> simulationItems(
+            EdiPartner partner,
+            EdiMessageType messageType,
+            List<EdiSimulationRequest.Item> requestItems
+    ) {
+        if (requestItems == null || requestItems.isEmpty()) {
+            throw new BadRequestException("Simulation must contain at least one item.");
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (EdiSimulationRequest.Item item : requestItems) {
+            Map<String, Object> payloadItem = new HashMap<>();
+            payloadItem.put("quantity", item.quantity());
+            payloadItem.put("unitPrice", BigDecimal.ZERO);
+            if (item.mappingId() != null) {
+                EdiMappingConfig mapping = ediMappingConfigRepository.findById(item.mappingId())
+                        .orElseThrow(() -> new EntityNotFoundException("EDI mapping not found"));
+                if (!mapping.getPartner().getId().equals(partner.getId()) || mapping.getMessageType() != messageType
+                        || !Boolean.TRUE.equals(mapping.getIsActive())) {
+                    throw new BadRequestException("Selected mapping does not match partner/message type.");
+                }
+                payloadItem.put("externalProductCode", mapping.getExternalProductCode());
+                payloadItem.put("unitOfMeasure", firstNonBlank(item.unitOfMeasure(), mapping.getInternalUom()));
+            } else if (item.productId() != null) {
+                Product product = productRepository.findById(item.productId())
+                        .orElseThrow(() -> new EntityNotFoundException("Product not found"));
+                payloadItem.put("productId", product.getId());
+                payloadItem.put("unitOfMeasure", firstNonBlank(item.unitOfMeasure(), product.getUnitOfMeasure()));
+            } else if (item.externalProductCode() != null && !item.externalProductCode().isBlank()) {
+                payloadItem.put("externalProductCode", item.externalProductCode());
+                payloadItem.put("unitOfMeasure", firstNonBlank(item.unitOfMeasure(), "pcs"));
+            } else {
+                throw new BadRequestException("Each simulation item requires mappingId, productId or externalProductCode.");
+            }
+            result.add(payloadItem);
+        }
+        return result;
+    }
+
+    private OperationResponse createOperationFromMessage(EdiMessage message, EdiProcessRequest request, String username) {
         ensureInboundPartnerCanBeProcessed(message);
 
         if (message.getDirection() == EdiDirection.OUTBOUND || message.getMessageType() == EdiMessageType.ORDRSP) {
@@ -294,7 +344,7 @@ public class EdiProcessingService {
             counterpartyId = message.getPartner().getCounterparty().getId();
         }
 
-        List<OperationRequest.ItemRequest> items = buildItems(message, payload);
+        List<OperationRequest.ItemRequest> items = buildItems(message, payload, operationType, warehouseId, request);
         validateEdiOperationItems(operationType, warehouseId, items);
         OperationRequest operationRequest = new OperationRequest(
                 operationType,
@@ -346,25 +396,91 @@ public class EdiProcessingService {
         );
     }
 
-    private List<OperationRequest.ItemRequest> buildItems(EdiMessage message, JsonNode payload) {
+    private List<OperationRequest.ItemRequest> buildItems(
+            EdiMessage message,
+            JsonNode payload,
+            OperationType operationType,
+            Long warehouseId,
+            EdiProcessRequest request
+    ) {
         JsonNode itemNodes = payload.get("items");
         if (itemNodes == null || !itemNodes.isArray() || itemNodes.isEmpty()) {
             throw new BadRequestException("EDI payload must contain non-empty items array.");
         }
 
+        Map<Integer, List<EdiProcessRequest.CellAssignment>> cellAssignments = request == null || request.cellAssignments() == null
+                ? Map.of()
+                : request.cellAssignments().stream()
+                .collect(Collectors.groupingBy(EdiProcessRequest.CellAssignment::itemIndex));
+
         List<OperationRequest.ItemRequest> items = new ArrayList<>();
+        int index = 0;
         for (JsonNode itemNode : itemNodes) {
             Product product = resolveProduct(message, itemNode);
-            items.add(new OperationRequest.ItemRequest(
-                    product.getId(),
-                    readRequiredInt(itemNode, "quantity"),
-                    readBigDecimal(itemNode, "unitPrice"),
-                    firstNonBlank(readText(itemNode, "unitOfMeasure"), product.getUnitOfMeasure()),
-                    readLong(itemNode, "fromCellId"),
-                    readLong(itemNode, "toCellId")
-            ));
+            Integer totalQuantity = readRequiredInt(itemNode, "quantity");
+            Long fromCellId = readLong(itemNode, "fromCellId");
+            Long toCellId = readLong(itemNode, "toCellId");
+            BigDecimal unitPrice = readBigDecimal(itemNode, "unitPrice");
+            String unitOfMeasure = firstNonBlank(readText(itemNode, "unitOfMeasure"), product.getUnitOfMeasure());
+            List<EdiProcessRequest.CellAssignment> assignments = cellAssignments.getOrDefault(index, List.of());
+
+            if (!assignments.isEmpty()) {
+                addAssignedOperationItems(items, operationType, product, totalQuantity, unitPrice, unitOfMeasure, assignments);
+            } else {
+                items.add(new OperationRequest.ItemRequest(
+                        product.getId(),
+                        totalQuantity,
+                        unitPrice,
+                        unitOfMeasure,
+                        fromCellId,
+                        toCellId
+                ));
+            }
+            index++;
         }
         return items;
+    }
+
+    private void addAssignedOperationItems(
+            List<OperationRequest.ItemRequest> items,
+            OperationType operationType,
+            Product product,
+            Integer totalQuantity,
+            BigDecimal unitPrice,
+            String unitOfMeasure,
+            List<EdiProcessRequest.CellAssignment> assignments
+    ) {
+        Map<Long, Integer> quantitiesByCell = new HashMap<>();
+        for (EdiProcessRequest.CellAssignment assignment : assignments) {
+            if (assignment.cellId() == null) {
+                throw new BadRequestException("EDI cell assignment must contain cellId.");
+            }
+            Integer quantity = assignment.quantity() == null && assignments.size() == 1
+                    ? totalQuantity
+                    : assignment.quantity();
+            if (quantity == null || quantity <= 0) {
+                throw new BadRequestException("EDI cell assignment quantity must be positive.");
+            }
+            quantitiesByCell.merge(assignment.cellId(), quantity, Integer::sum);
+        }
+
+        int assignedQuantity = quantitiesByCell.values().stream().mapToInt(Integer::intValue).sum();
+        if (assignedQuantity != totalQuantity) {
+            throw new BadRequestException("EDI cell assignment quantity must match item quantity for product "
+                    + product.getSku() + ": expected " + totalQuantity + ", got " + assignedQuantity);
+        }
+
+        for (Map.Entry<Long, Integer> entry : quantitiesByCell.entrySet()) {
+            Long cellId = entry.getKey();
+            items.add(new OperationRequest.ItemRequest(
+                    product.getId(),
+                    entry.getValue(),
+                    unitPrice,
+                    unitOfMeasure,
+                    operationType == OperationType.OUTCOME ? cellId : null,
+                    operationType == OperationType.INCOME ? cellId : null
+            ));
+        }
     }
 
     private void validateEdiOperationItems(
@@ -375,7 +491,7 @@ public class EdiProcessingService {
         for (OperationRequest.ItemRequest item : items) {
             if (operationType == OperationType.INCOME) {
                 if (item.toCellId() == null) {
-                    throw new BadRequestException("EDI DESADV item requires toCellId for INCOME draft creation.");
+                    throw new BadRequestException("Select target cell (toCellId) for every DESADV item before processing.");
                 }
                 ensureCellBelongsToWarehouse(item.toCellId(), warehouseId, "EDI DESADV item target cell");
             }
@@ -521,8 +637,13 @@ public class EdiProcessingService {
         return new EdiProcessingQueueResponse(
                 queueItem.getId(),
                 message.getId(),
+                message.getMessageType(),
+                message.getStatus(),
                 message.getMessageRef(),
+                message.getDocumentNumber(),
                 message.getPartner() == null ? null : message.getPartner().getCode(),
+                message.getRelatedOperation() == null ? null : message.getRelatedOperation().getId(),
+                message.getNormalizedPayload(),
                 queueItem.getStatus(),
                 queueItem.getAttemptCount(),
                 queueItem.getScheduledAt(),

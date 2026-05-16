@@ -22,7 +22,7 @@ export function OperationDetailsPage() {
   const chain = useQuery({ queryKey: ['operation-chain', id], queryFn: () => operationsApi.executionChain(id), enabled: Number.isFinite(id) });
   const verifications = useQuery({ queryKey: ['operation-verifications', id], queryFn: () => operationsApi.verifications(id), enabled: Number.isFinite(id) });
   const action = useMutation({
-    mutationFn: (kind: 'complete' | 'cancel') => kind === 'complete' ? operationsApi.complete(id) : operationsApi.cancel(id),
+    mutationFn: (kind: 'complete' | 'ship' | 'cancel') => kind === 'complete' ? operationsApi.complete(id) : kind === 'ship' ? operationsApi.ship(id) : operationsApi.cancel(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operation', id] });
       queryClient.invalidateQueries({ queryKey: ['operations'] });
@@ -48,6 +48,7 @@ export function OperationDetailsPage() {
     onError: (error) => setNotice(getErrorMessage(error)),
   });
   const canAct = canCompleteOperations(user?.role) && operationData?.status === 'DRAFT';
+  const canFactCheck = canAct && operationData?.type !== 'OUTCOME';
   const itemRows = useMemo(() => (operationData?.items ?? []).map((item) => ({
     ...item,
     actualQuantity: actuals[item.id!] ?? item.quantity,
@@ -66,8 +67,10 @@ export function OperationDetailsPage() {
           <Typography color="text.secondary">{operationTypeLabels[operation.type]} · {fmtDate(operation.createdAt)}</Typography>
         </Box>
         <Chip label={operationStatusLabels[operation.status]} color={operation.status === 'COMPLETED' ? 'success' : operation.status === 'DRAFT' ? 'warning' : 'default'} />
-        {canAct && <Button variant="contained" onClick={() => action.mutate('complete')}>Выполнить</Button>}
+        {canAct && operation.type === 'OUTCOME' && <Button variant="contained" onClick={() => action.mutate('ship')}>Отправить товары</Button>}
+        {canAct && operation.type !== 'OUTCOME' && <Button variant="contained" onClick={() => action.mutate('complete')}>Принять товар</Button>}
         {canAct && <Button color="error" onClick={() => action.mutate('cancel')}>Отменить</Button>}
+        {operation.status === 'SHIPPED' && <Chip label="Ожидается подтверждение клиента" />}
       </Box>
       {notice && <Alert severity="error" onClose={() => setNotice('')}>{notice}</Alert>}
       <Card>
@@ -100,7 +103,7 @@ export function OperationDetailsPage() {
           { key: 'toCellCode', label: 'В ячейку' },
         ]}
       />
-      {canAct && (
+      {canFactCheck && (
         <Card>
           <CardContent>
             <Stack spacing={2}>

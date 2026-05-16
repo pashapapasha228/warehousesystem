@@ -18,9 +18,9 @@ public interface EdiProcessingQueueRepository extends JpaRepository<EdiProcessin
 
     long countByStatus(EdiQueueStatus status);
 
-    @EntityGraph(attributePaths = {"ediMessage", "ediMessage.partner"})
+    @EntityGraph(attributePaths = {"ediMessage", "ediMessage.partner", "ediMessage.relatedOperation"})
     Page<EdiProcessingQueue> findAll(Pageable pageable);
 
-    @EntityGraph(attributePaths = {"ediMessage", "ediMessage.partner"})
+    @EntityGraph(attributePaths = {"ediMessage", "ediMessage.partner", "ediMessage.relatedOperation"})
     Page<EdiProcessingQueue> findByStatus(EdiQueueStatus status, Pageable pageable);
 }

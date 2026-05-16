@@ -5,5 +5,6 @@ public enum EdiMessageStatus {
     NORMALIZED,
     PROCESSING,
     PROCESSED,
+    COMPLETED,
     FAILED
 }

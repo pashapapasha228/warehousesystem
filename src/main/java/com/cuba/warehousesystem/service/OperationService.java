@@ -20,6 +20,8 @@ import com.cuba.warehousesystem.model.Counterparty;
 import com.cuba.warehousesystem.model.DocumentExecutionStage;
 import com.cuba.warehousesystem.model.DocumentExecutionStatus;
 import com.cuba.warehousesystem.model.DocumentExecutionStep;
+import com.cuba.warehousesystem.model.EdiMessage;
+import com.cuba.warehousesystem.model.EdiMessageStatus;
 import com.cuba.warehousesystem.model.Operation;
 import com.cuba.warehousesystem.model.OperationItem;
 import com.cuba.warehousesystem.model.OperationSource;
@@ -35,6 +37,7 @@ import com.cuba.warehousesystem.model.VerificationDecision;
 import com.cuba.warehousesystem.model.Warehouse;
 import com.cuba.warehousesystem.repository.CounterpartyRepository;
 import com.cuba.warehousesystem.repository.DocumentExecutionStepRepository;
+import com.cuba.warehousesystem.repository.EdiMessageRepository;
 import com.cuba.warehousesystem.repository.OperationRepository;
 import com.cuba.warehousesystem.repository.OperationVerificationRepository;
 import com.cuba.warehousesystem.repository.ProductRepository;
@@ -72,6 +75,7 @@ public class OperationService {
     private final CounterpartyRepository counterpartyRepository;
     private final DocumentExecutionStepRepository documentExecutionStepRepository;
     private final OperationVerificationRepository operationVerificationRepository;
+    private final EdiMessageRepository ediMessageRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public OperationResponse createDraftOperation(OperationRequest request, String username) {
@@ -120,6 +124,10 @@ public class OperationService {
         User completedBy = userRepository.findByUsername(username)
                 .orElseThrow(() -> new EntityNotFoundException("User not found"));
 
+        if (operation.getStatus() == OperationStatus.SHIPPED) {
+            return finalizeShippedOperation(operation, completedBy, username, "Client receipt confirmed");
+        }
+
         if (operation.getStatus() != OperationStatus.DRAFT) {
             throw new InvalidOperationException("Operation is already processed or cancelled.");
         }
@@ -127,6 +135,40 @@ public class OperationService {
         return completeWithQuantities(operation, completedBy, username,
                 operation.getItems().stream().collect(Collectors.toMap(OperationItem::getId, OperationItem::getQuantity)),
                 "Operation completed");
+    }
+
+    public OperationResponse shipOperation(Long operationId, String username) {
+        Operation operation = findOperationWithItems(operationId);
+        User completedBy = userRepository.findByUsername(username)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+
+        if (operation.getType() != OperationType.OUTCOME) {
+            throw new InvalidOperationException("Only OUTCOME operations can be shipped.");
+        }
+        if (operation.getStatus() != OperationStatus.DRAFT) {
+            throw new InvalidOperationException("Only draft OUTCOME operations can be shipped.");
+        }
+
+        validateOperationQuantities(operation, operation.getItems().stream()
+                .collect(Collectors.toMap(OperationItem::getId, OperationItem::getQuantity)));
+        for (OperationItem item : operation.getItems()) {
+            updateStockBalanceAndCell(operation.getId(), username, item, operation.getType(), item.getQuantity());
+        }
+
+        operation.setStatus(OperationStatus.SHIPPED);
+        operation.setCompletedBy(completedBy);
+        operation.setCompletedAt(LocalDateTime.now());
+        Operation saved = operationRepository.save(operation);
+        recordExecutionStep(saved, null, DocumentExecutionStage.STOCK_POSTED, DocumentExecutionStatus.DONE,
+                "Goods shipped, stock decreased", username);
+        return toResponse(saved);
+    }
+
+    public OperationResponse finalizeShippedOperation(Long operationId, String username, String details) {
+        Operation operation = findOperationWithItems(operationId);
+        User completedBy = userRepository.findByUsername(username)
+                .orElseThrow(() -> new EntityNotFoundException("User not found"));
+        return finalizeShippedOperation(operation, completedBy, username, details);
     }
 
     public OperationResponse cancelOperation(Long operationId) {
@@ -502,6 +544,9 @@ public class OperationService {
                 "Stock posted", username);
         recordExecutionStep(saved, null, DocumentExecutionStage.COMPLETED, DocumentExecutionStatus.DONE,
                 completionDetails, username);
+        if (saved.getSource() == OperationSource.EDI && saved.getType() == OperationType.INCOME) {
+            markRelatedEdiMessageCompleted(saved);
+        }
         eventPublisher.publishEvent(new OperationCompletedEvent(
                 saved.getId(),
                 saved.getOperationNumber(),
@@ -511,6 +556,37 @@ public class OperationService {
                 LocalDateTime.now()
         ));
         return toResponse(saved);
+    }
+
+    private OperationResponse finalizeShippedOperation(Operation operation, User completedBy, String username, String details) {
+        if (operation.getStatus() != OperationStatus.SHIPPED) {
+            throw new InvalidOperationException("Only shipped OUTCOME operations can be completed.");
+        }
+        operation.setStatus(OperationStatus.COMPLETED);
+        operation.setCompletedBy(completedBy);
+        operation.setCompletedAt(LocalDateTime.now());
+        Operation saved = operationRepository.save(operation);
+        recordExecutionStep(saved, null, DocumentExecutionStage.COMPLETED, DocumentExecutionStatus.DONE,
+                details, username);
+        markRelatedEdiMessageCompleted(saved);
+        eventPublisher.publishEvent(new OperationCompletedEvent(
+                saved.getId(),
+                saved.getOperationNumber(),
+                saved.getType(),
+                saved.getWarehouse().getId(),
+                username,
+                LocalDateTime.now()
+        ));
+        return toResponse(saved);
+    }
+
+    private void markRelatedEdiMessageCompleted(Operation operation) {
+        ediMessageRepository.findByRelatedOperation_Id(operation.getId()).ifPresent(message -> {
+            message.setStatus(EdiMessageStatus.COMPLETED);
+            message.setProcessedAt(LocalDateTime.now());
+            message.setErrorMessage(null);
+            ediMessageRepository.save(message);
+        });
     }
 
     private void validateOperationQuantities(Operation operation, Map<Long, Integer> quantitiesByItemId) {

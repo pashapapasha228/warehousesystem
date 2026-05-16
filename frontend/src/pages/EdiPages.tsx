@@ -1,9 +1,9 @@
-import { Send } from '@mui/icons-material';
-import { Alert, Box, Button, Card, CardContent, FormControl, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { Delete, Send } from '@mui/icons-material';
+import { Alert, Box, Button, Card, CardContent, FormControl, IconButton, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { ediApi } from '../api/resourcesApi';
+import { ediApi, operationsApi, productsApi, storageCellsApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
 import { useAuth } from '../auth/useAuth';
 import { ResourcePage } from '../components/ResourcePage';
@@ -14,6 +14,7 @@ import { canManageEdi } from '../utils/permissions';
 import { fmtDate } from '../utils/format';
 import { useTableSort } from '../utils/sorting';
 import { ediMessageStatuses, ediMessageTypeLabels, ediMessageTypes, ediQueueStatuses, type EdiMessageType } from '../types/enums';
+import type { EdiMapping, EdiQueueItem, Product, StockBalance, StorageCell } from '../types/api';
 
 const inboundPayloadExamples: Record<EdiMessageType, string> = {
   DESADV: '{\n  "warehouseId": 1,\n  "documentDate": "2026-05-14",\n  "items": [\n    {\n      "externalProductCode": "SUPPLIER-SKU-001",\n      "quantity": 5,\n      "toCellId": 1,\n      "unitPrice": 10,\n      "unitOfMeasure": "pcs"\n    }\n  ]\n}',
@@ -163,29 +164,353 @@ function InboundEdiForm() {
 }
 
 export function EdiQueuePage() {
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [status, setStatus] = useState('');
+  const [selected, setSelected] = useState<EdiQueueItem | null>(null);
+  const [allocations, setAllocations] = useState<AllocationState>({});
+  const [notice, setNotice] = useState('');
   const tableSort = useTableSort('id', 'desc');
   const query = useQuery({ queryKey: ['edi-queue', page, size, status, tableSort.sort], queryFn: () => ediApi.queue({ page, size, sort: tableSort.sort, status: status || undefined }) });
+  const selectedPayload = parsePayload(selected?.normalizedPayload);
+  const cells = useQuery({
+    queryKey: ['edi-process-cells', selectedPayload?.warehouseId],
+    queryFn: () => storageCellsApi.list({ page: 0, size: 500, sort: 'code,asc', warehouseId: selectedPayload?.warehouseId }),
+    enabled: !!selectedPayload?.warehouseId,
+  });
+  const products = useQuery({
+    queryKey: ['edi-process-products'],
+    queryFn: () => productsApi.list({ page: 0, size: 1000, sort: 'sku,asc' }),
+    enabled: !!selected,
+  });
+  const mappings = useQuery({
+    queryKey: ['edi-process-mappings'],
+    queryFn: () => ediApi.mappings.list({ page: 0, size: 1000, sort: 'externalProductCode,asc' }),
+    enabled: !!selected,
+  });
+  const stockBalances = useQuery({
+    queryKey: ['edi-process-stock-balances', selectedPayload?.warehouseId],
+    queryFn: () => operationsApi.stockBalances({ page: 0, size: 1000, warehouseId: selectedPayload?.warehouseId }),
+    enabled: !!selectedPayload?.warehouseId,
+  });
+  const processingWarnings = useMemo(() => {
+    if (!selectedPayload?.items) return [];
+    return selectedPayload.items
+      .map((item, index) => {
+        const product = resolvePayloadProduct(item, selected, products.data?.content ?? [], mappings.data?.content ?? []);
+        return product ? null : `Строка ${index + 1}: товар не найден в справочнике или маппинге`;
+      })
+      .filter(Boolean) as string[];
+  }, [mappings.data?.content, products.data?.content, selected, selectedPayload?.items]);
+  const canCreateDocument = !!selectedPayload?.items?.length
+    && processingWarnings.length === 0
+    && selectedPayload.items.every((item, index) => {
+      const requiredQuantity = Math.max(1, Number(item.quantity) || 1);
+      const rows = allocations[index] ?? [];
+      const product = resolvePayloadProduct(item, selected, products.data?.content ?? [], mappings.data?.content ?? []);
+      return rows.length > 0
+        && rows.every((row) => row.cellId && Number(row.quantity) > 0)
+        && rows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0) === requiredQuantity
+        && rows.every((row) => {
+          const quantity = Number(row.quantity) || 0;
+          if (!product) return false;
+          if (selected?.messageType === 'DESADV') {
+            const cell = cells.data?.content.find((candidate) => String(candidate.id) === row.cellId);
+            return !!cell && isIncomeCellSuitable(product, cell, stockBalances.data?.content ?? [], quantity);
+          }
+          return (stockBalances.data?.content ?? []).some((balance) => balance.productId === product.id
+            && String(balance.cellId) === row.cellId
+            && balance.availableQuantity >= quantity);
+        });
+    });
+  const processMutation = useMutation({
+    mutationFn: () => ediApi.process(selected!.id, {
+      cellAssignments: Object.entries(allocations)
+        .flatMap(([itemIndex, rows]) => rows
+          .filter((row) => row.cellId && Number(row.quantity) > 0)
+          .map((row) => ({ itemIndex: Number(itemIndex), cellId: Number(row.cellId), quantity: Number(row.quantity) }))),
+    }),
+    onSuccess: () => {
+      setNotice('EDI-сообщение обработано, документ создан без изменения остатков.');
+      setSelected(null);
+      setAllocations({});
+      queryClient.invalidateQueries({ queryKey: ['edi-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['edi-messages'] });
+      queryClient.invalidateQueries({ queryKey: ['operations'] });
+    },
+    onError: (error) => setNotice(getErrorMessage(error)),
+  });
   return (
     <Stack spacing={2}>
       <Typography variant="h4">Очередь EDI</Typography>
+      {notice && <Alert severity={notice.startsWith('EDI') ? 'success' : 'error'} onClose={() => setNotice('')}>{notice}</Alert>}
       <FormControl sx={{ maxWidth: 220 }}><InputLabel>Статус</InputLabel><Select label="Статус" value={status} onChange={(e) => setStatus(e.target.value)}><MenuItem value="">Все</MenuItem>{ediQueueStatuses.map((v) => <MenuItem key={v} value={v}>{v}</MenuItem>)}</Select></FormControl>
       {query.isLoading && <LoadingState />}
       {query.isError && <ErrorState message={getErrorMessage(query.error)} />}
       {query.data && <ResourceTable rows={query.data.content} total={query.data.totalElements} page={page} size={size} onPageChange={setPage} onSizeChange={(n) => { setSize(n); setPage(0); }} {...tableSort.tableSortProps} onSortChange={(sortBy, sortDirection) => { tableSort.tableSortProps.onSortChange(sortBy, sortDirection); setPage(0); }} columns={[
         { key: 'id', label: 'ID' },
         { key: 'ediMessageId', label: 'Сообщение' },
+        { key: 'messageType', label: 'Тип' },
+        { key: 'messageStatus', label: 'Статус EDI' },
         { key: 'messageRef', label: 'Ref' },
+        { key: 'documentNumber', label: 'Документ' },
         { key: 'partnerCode', label: 'Партнер' },
         { key: 'status', label: 'Статус' },
         { key: 'attemptCount', label: 'Попытки' },
         { key: 'scheduledAt', label: 'Запланировано', render: (r) => fmtDate(r.scheduledAt) },
         { key: 'lastError', label: 'Ошибка' },
+        { key: 'process', label: 'Обработка', sortKey: false, render: (row) => row.status === 'PENDING' || row.status === 'FAILED' ? <Button size="small" onClick={() => { setSelected(row); setAllocations({}); }}>Обработать</Button> : row.relatedOperationId ? <Button size="small" href={`/operations/${row.relatedOperationId}`}>Операция</Button> : '—' },
       ]} />}
+      {selected && selectedPayload && (
+        <Card>
+          <CardContent>
+            <Stack spacing={2}>
+              <Typography variant="h6">Обработка сообщения #{selected.ediMessageId}</Typography>
+              <Typography color="text.secondary">
+                {selected.messageType === 'DESADV'
+                  ? 'Выберите ячейки, куда положить товар. Остатки изменятся только после складской приемки операции.'
+                  : 'Выберите ячейки списания с нужным товаром. Остатки спишутся только на шаге отправки товаров.'}
+              </Typography>
+              {processingWarnings.map((warning) => <Alert key={warning} severity="warning">{warning}</Alert>)}
+              {(selectedPayload.items ?? []).map((item: EdiPayloadItem, index: number) => (
+                <EdiAllocationRows
+                  key={index}
+                  index={index}
+                  item={item}
+                  queueItem={selected}
+                  cells={cells.data?.content ?? []}
+                  products={products.data?.content ?? []}
+                  mappings={mappings.data?.content ?? []}
+                  stockBalances={stockBalances.data?.content ?? []}
+                  rows={allocations[index] ?? []}
+                  setAllocations={setAllocations}
+                />
+              ))}
+              <Box display="flex" gap={2}>
+                <Button variant="contained" disabled={processMutation.isPending || !canCreateDocument} onClick={() => processMutation.mutate()}>Создать документ</Button>
+                <Button onClick={() => { setSelected(null); setAllocations({}); }}>Отмена</Button>
+              </Box>
+            </Stack>
+          </CardContent>
+        </Card>
+      )}
     </Stack>
   );
+}
+
+type EdiPayloadItem = {
+  productId?: number | string | null;
+  externalProductCode?: string | null;
+  sku?: string | null;
+  quantity?: number | string | null;
+  unitOfMeasure?: string | null;
+};
+
+type EdiNormalizedPayload = {
+  warehouseId?: number | string | null;
+  items?: EdiPayloadItem[];
+};
+
+type AllocationRow = {
+  cellId: string;
+  quantity: number;
+};
+
+type AllocationState = Record<number, AllocationRow[]>;
+
+function EdiAllocationRows({
+  index,
+  item,
+  queueItem,
+  cells,
+  products,
+  mappings,
+  stockBalances,
+  rows,
+  setAllocations,
+}: {
+  index: number;
+  item: EdiPayloadItem;
+  queueItem: EdiQueueItem;
+  cells: StorageCell[];
+  products: Product[];
+  mappings: EdiMapping[];
+  stockBalances: StockBalance[];
+  rows: AllocationRow[];
+  setAllocations: (updater: (current: AllocationState) => AllocationState) => void;
+}) {
+  const product = resolvePayloadProduct(item, queueItem, products, mappings);
+  const requiredQuantity = Math.max(1, Number(item.quantity) || 1);
+  const displayedRows = rows.length ? rows : [{ cellId: '', quantity: requiredQuantity }];
+  const allocatedQuantity = rows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+  const allocationOk = allocatedQuantity === requiredQuantity;
+
+  const setRow = (rowIndex: number, patch: Partial<AllocationRow>) => {
+    setAllocations((current) => {
+      const nextRows = current[index]?.length ? [...current[index]] : [{ cellId: '', quantity: requiredQuantity }];
+      nextRows[rowIndex] = { ...nextRows[rowIndex], ...patch };
+      return { ...current, [index]: nextRows };
+    });
+  };
+
+  const addRow = () => {
+    setAllocations((current) => {
+      const nextRows = current[index]?.length ? [...current[index]] : [];
+      const alreadyAllocated = nextRows.reduce((sum, row) => sum + (Number(row.quantity) || 0), 0);
+      nextRows.push({ cellId: '', quantity: Math.max(1, requiredQuantity - alreadyAllocated) });
+      return { ...current, [index]: nextRows };
+    });
+  };
+
+  const removeRow = (rowIndex: number) => {
+    setAllocations((current) => {
+      const nextRows = (current[index] ?? []).filter((_, currentIndex) => currentIndex !== rowIndex);
+      return { ...current, [index]: nextRows };
+    });
+  };
+
+  return (
+    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
+      <Stack spacing={1.5}>
+        <Box display="flex" justifyContent="space-between" gap={2} flexWrap="wrap">
+          <Typography fontWeight={600}>
+            {item.sku || item.externalProductCode || `productId ${item.productId}`} · {requiredQuantity} {item.unitOfMeasure || product?.unitOfMeasure || 'pcs'}
+          </Typography>
+          <Typography color={allocationOk ? 'success.main' : 'warning.main'}>
+            Распределено: {allocatedQuantity || 0} / {requiredQuantity}
+          </Typography>
+        </Box>
+        <Typography color="text.secondary">Строка {index + 1}{product ? ` · ${product.sku} · ${product.name}` : ''}</Typography>
+        {displayedRows.map((row, rowIndex) => {
+          const options = queueItem.messageType === 'DESADV'
+            ? getIncomeCellOptions(product, cells, stockBalances, Number(row.quantity) || 1)
+            : getOutcomeCellOptions(product, stockBalances);
+          return (
+            <Box key={rowIndex} display="grid" gridTemplateColumns={{ xs: '1fr', md: 'minmax(220px, 2fr) 140px 48px' }} gap={1.5} alignItems="center">
+              <FormControl fullWidth>
+                <InputLabel>{queueItem.messageType === 'DESADV' ? 'Куда положить' : 'Откуда взять'}</InputLabel>
+                <Select
+                  label={queueItem.messageType === 'DESADV' ? 'Куда положить' : 'Откуда взять'}
+                  value={row.cellId}
+                  onChange={(event) => setRow(rowIndex, { cellId: String(event.target.value) })}
+                >
+                  {options.map((option) => (
+                    <MenuItem key={option.cellId} value={option.cellId}>{option.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label="Количество"
+                type="number"
+                inputProps={{ min: 1 }}
+                value={row.quantity}
+                onChange={(event) => setRow(rowIndex, { quantity: Number(event.target.value) })}
+              />
+              <IconButton aria-label="Удалить ячейку" onClick={() => removeRow(rowIndex)} disabled={!rows.length}>
+                <Delete />
+              </IconButton>
+            </Box>
+          );
+        })}
+        <Box>
+          <Button size="small" variant="outlined" onClick={addRow}>Добавить ячейку</Button>
+        </Box>
+      </Stack>
+    </Box>
+  );
+}
+
+function parsePayload(payload?: string): EdiNormalizedPayload | null {
+  if (!payload) return null;
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+function resolvePayloadProduct(
+  item: EdiPayloadItem,
+  queueItem: EdiQueueItem | null,
+  products: Product[],
+  mappings: EdiMapping[],
+) {
+  const productId = Number(item.productId);
+  if (Number.isFinite(productId) && productId > 0) {
+    return products.find((product) => product.id === productId);
+  }
+
+  if (!item.externalProductCode || !queueItem) return undefined;
+  const mapping = mappings.find((candidate) => candidate.isActive !== false
+    && candidate.externalProductCode === item.externalProductCode
+    && candidate.messageType === queueItem.messageType
+    && (!queueItem.partnerCode || candidate.partnerCode === queueItem.partnerCode));
+  return mapping ? products.find((product) => product.id === mapping.internalProductId) : undefined;
+}
+
+function getIncomeCellOptions(
+  product: Product | undefined,
+  cells: StorageCell[],
+  stockBalances: StockBalance[],
+  quantity: number,
+) {
+  if (!product) return [];
+  return cells
+    .filter((cell) => isIncomeCellSuitable(product, cell, stockBalances, quantity))
+    .map((cell) => ({
+      cellId: String(cell.id),
+      label: `${cell.warehouseCode}/${cell.code} · свободно ${remainingUnits(cell, stockBalances)} ед.`,
+    }));
+}
+
+function getOutcomeCellOptions(
+  product: Product | undefined,
+  stockBalances: StockBalance[],
+) {
+  if (!product) return [];
+  return stockBalances
+    .filter((balance) => balance.productId === product.id && balance.availableQuantity > 0)
+    .map((balance) => ({
+      cellId: String(balance.cellId),
+      label: `${balance.warehouseCode}/${balance.cellCode} · доступно ${balance.availableQuantity} ед.`,
+    }));
+}
+
+function isIncomeCellSuitable(
+  product: Product,
+  cell: StorageCell,
+  stockBalances: StockBalance[],
+  quantity: number,
+) {
+  if (cell.isActive === false) return false;
+  if (remainingUnits(cell, stockBalances) < quantity) return false;
+  if (!dimensionFits(product.lengthCm, cell.lengthCm)) return false;
+  if (!dimensionFits(product.widthCm, cell.widthCm)) return false;
+  if (!dimensionFits(product.heightCm, cell.heightCm)) return false;
+  if (!limitFits(cell.maxWeightKg, cell.currentWeightKg, product.weightPerUnitKg, quantity)) return false;
+  return limitFits(cell.maxVolumeCm3, cell.currentVolumeCm3, product.volumePerUnitCm3, quantity);
+}
+
+function remainingUnits(cell: StorageCell, stockBalances: StockBalance[]) {
+  const capacity = Number(cell.capacityUnits) || 0;
+  const occupied = stockBalances
+    .filter((balance) => balance.cellId === cell.id)
+    .reduce((sum, balance) => sum + (Number(balance.quantity) || 0), 0);
+  return Math.max(0, capacity - occupied);
+}
+
+function dimensionFits(productSize?: number, cellSize?: number) {
+  const productValue = Number(productSize) || 0;
+  const cellValue = Number(cellSize) || 0;
+  return productValue <= 0 || cellValue <= 0 || productValue <= cellValue;
+}
+
+function limitFits(maxLimit?: number, currentValue?: number, perUnit?: number, quantity = 1) {
+  const max = Number(maxLimit) || 0;
+  const current = Number(currentValue) || 0;
+  const increment = (Number(perUnit) || 0) * quantity;
+  return max <= 0 ? increment <= 0 : current + increment <= max;
 }
 
 export function EdiAuditPage() {

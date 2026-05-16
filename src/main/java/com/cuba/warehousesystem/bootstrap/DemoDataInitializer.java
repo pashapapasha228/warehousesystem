@@ -946,7 +946,7 @@ public class DemoDataInitializer implements ApplicationRunner {
             case RECEIVED, NORMALIZED -> EdiQueueStatus.PENDING;
             case PROCESSING -> EdiQueueStatus.RUNNING;
             case FAILED -> EdiQueueStatus.FAILED;
-            case PROCESSED -> EdiQueueStatus.DONE;
+            case PROCESSED, COMPLETED -> EdiQueueStatus.DONE;
         });
         queue.setAttemptCount(messageStatus == EdiMessageStatus.FAILED ? 3 : messageStatus == EdiMessageStatus.PROCESSING ? 1 : 0);
         queue.setScheduledAt(message.getReceivedAt().plusMinutes(2));

@@ -51,6 +51,12 @@ public class OperationController {
         return ResponseEntity.ok(operationService.completeOperation(id, authentication.getName()));
     }
 
+    @PutMapping("/{id}/ship")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<OperationResponse> shipOperation(@PathVariable Long id, Authentication authentication) {
+        return ResponseEntity.ok(operationService.shipOperation(id, authentication.getName()));
+    }
+
     @PutMapping("/{id}/cancel")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<OperationResponse> cancelOperation(@PathVariable Long id) {

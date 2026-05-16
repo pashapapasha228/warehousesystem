@@ -21,6 +21,8 @@ public interface EdiMessageRepository extends JpaRepository<EdiMessage, Long> {
 
     Optional<EdiMessage> findByMessageRef(String messageRef);
 
+    Optional<EdiMessage> findByRelatedOperation_Id(Long operationId);
+
     @EntityGraph(attributePaths = {"partner", "relatedOperation"})
     Page<EdiMessage> findAll(Pageable pageable);
 

@@ -55,6 +55,7 @@ export const operationsApi = {
   get: (id: number) => getOne<Operation>('/operations', id),
   create: (body: any) => createOne<Operation, any>('/operations', body),
   complete: (id: number) => http.put<Operation>(`/operations/${id}/complete`).then((r) => r.data),
+  ship: (id: number) => http.put<Operation>(`/operations/${id}/ship`).then((r) => r.data),
   cancel: (id: number) => http.put<Operation>(`/operations/${id}/cancel`).then((r) => r.data),
   verify: (id: number, body: any) => http.post<OperationVerification>(`/operations/${id}/verification`, body).then((r) => r.data),
   verifications: (id: number) => http.get<OperationVerification[]>(`/operations/${id}/verification`).then((r) => r.data),
@@ -68,8 +69,9 @@ export const ediApi = {
   inbound: (body: any) => createOne<EdiMessage, any>('/edi/messages/inbound', body),
   simulateSupplier: (body: any) => createOne<EdiMessage, any>('/edi/simulator/supplier', body),
   simulateCustomer: (body: any) => createOne<EdiMessage, any>('/edi/simulator/customer', body),
+  simulateCustomerReceipt: (body: any) => createOne<EdiMessage, any>('/edi/simulator/customer-receipt', body),
   queue: (params?: PageParams) => list<EdiQueueItem>('/edi/queue', params),
-  process: (id: number) => http.post(`/edi/queue/${id}/process`).then((r) => r.data),
+  process: (id: number, body?: any) => http.post(`/edi/queue/${id}/process`, body ?? {}).then((r) => r.data),
   audit: (params?: PageParams) => list<EdiAuditLog>('/edi/audit', params),
   partners: {
     list: (params?: PageParams) => list<EdiPartner>('/edi/partners', params),

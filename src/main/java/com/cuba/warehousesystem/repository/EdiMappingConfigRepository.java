@@ -34,6 +34,9 @@ public interface EdiMappingConfigRepository extends JpaRepository<EdiMappingConf
             String externalProductCode
     );
 
+    @EntityGraph(attributePaths = {"partner", "internalProduct"})
+    List<EdiMappingConfig> findByPartner_IdAndMessageTypeAndIsActiveTrue(Long partnerId, EdiMessageType messageType);
+
     boolean existsByPartner_IdAndMessageTypeAndExternalProductCode(
             Long partnerId,
             EdiMessageType messageType,

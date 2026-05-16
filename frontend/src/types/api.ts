@@ -222,8 +222,13 @@ export type EdiMessage = {
 export type EdiQueueItem = {
   id: number;
   ediMessageId: number;
+  messageType: EdiMessageType;
+  messageStatus: EdiMessageStatus;
   messageRef?: string;
+  documentNumber?: string;
   partnerCode?: string;
+  relatedOperationId?: number;
+  normalizedPayload?: string;
   status: EdiQueueStatus;
   attemptCount: number;
   scheduledAt?: string;

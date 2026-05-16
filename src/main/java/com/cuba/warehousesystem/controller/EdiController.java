@@ -1,8 +1,10 @@
 package com.cuba.warehousesystem.controller;
 
 import com.cuba.warehousesystem.dto.EdiAuditLogResponse;
+import com.cuba.warehousesystem.dto.EdiCustomerReceiptRequest;
 import com.cuba.warehousesystem.dto.EdiMessageReceiveRequest;
 import com.cuba.warehousesystem.dto.EdiMessageResponse;
+import com.cuba.warehousesystem.dto.EdiProcessRequest;
 import com.cuba.warehousesystem.dto.EdiProcessResultResponse;
 import com.cuba.warehousesystem.dto.EdiProcessingQueueResponse;
 import com.cuba.warehousesystem.dto.EdiSimulationRequest;
@@ -51,6 +53,16 @@ public class EdiController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ediProcessingService.simulateCustomerOrders(request));
     }
 
+    @PostMapping("/simulator/customer-receipt")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<EdiMessageResponse> simulateCustomerReceipt(
+            @Valid @RequestBody EdiCustomerReceiptRequest request,
+            Authentication authentication
+    ) {
+        String username = authentication == null ? "system" : authentication.getName();
+        return ResponseEntity.status(HttpStatus.CREATED).body(ediProcessingService.simulateCustomerReceipt(request, username));
+    }
+
     @GetMapping("/messages/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ResponseEntity<EdiMessageResponse> getMessage(@PathVariable Long id) {
@@ -78,9 +90,13 @@ public class EdiController {
 
     @PostMapping("/queue/{id}/process")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<EdiProcessResultResponse> processQueueItem(@PathVariable Long id, Authentication authentication) {
+    public ResponseEntity<EdiProcessResultResponse> processQueueItem(
+            @PathVariable Long id,
+            @RequestBody(required = false) EdiProcessRequest request,
+            Authentication authentication
+    ) {
         String username = authentication == null ? "system" : authentication.getName();
-        return ResponseEntity.ok(ediProcessingService.processQueueItem(id, username));
+        return ResponseEntity.ok(ediProcessingService.processQueueItem(id, request == null ? new EdiProcessRequest(java.util.List.of()) : request, username));
     }
 
     @GetMapping("/audit")
