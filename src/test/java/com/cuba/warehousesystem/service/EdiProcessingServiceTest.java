@@ -186,9 +186,8 @@ class EdiProcessingServiceTest {
     @Test
     void missingProductMappingFailsQueueItem() {
         queue(EdiMessageType.DESADV, CounterpartyType.SUPPLIER, payload("\"toCellId\":10,"));
-        when(ediMappingConfigRepository.findByPartner_IdAndMessageTypeAndExternalProductCodeAndIsActiveTrue(
-                1L, EdiMessageType.DESADV, "EXT-1"
-        )).thenReturn(Optional.empty());
+        when(ediMappingConfigRepository.findAllByPartner_IdAndExternalProductCodeAndIsActiveTrue(1L, "EXT-1"))
+                .thenReturn(List.of());
 
         EdiProcessResultResponse result = service.processQueueItem(1L, "manager");
 
@@ -248,9 +247,8 @@ class EdiProcessingServiceTest {
         mapping.setMessageType(EdiMessageType.DESADV);
         mapping.setExternalProductCode("EXT-1");
         mapping.setInternalProduct(product);
-        when(ediMappingConfigRepository.findByPartner_IdAndMessageTypeAndExternalProductCodeAndIsActiveTrue(
-                eq(1L), any(EdiMessageType.class), eq("EXT-1")
-        )).thenReturn(Optional.of(mapping));
+        when(ediMappingConfigRepository.findAllByPartner_IdAndExternalProductCodeAndIsActiveTrue(eq(1L), eq("EXT-1")))
+                .thenReturn(List.of(mapping));
     }
 
     private void mockDraftOperation(Long id, String number) {

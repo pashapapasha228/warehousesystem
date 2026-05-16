@@ -6,7 +6,6 @@ import { Controller, useFieldArray, useForm } from 'react-hook-form';
 import { ediApi, productsApi, warehousesApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
 import { useWarehouseContext } from '../app/WarehouseContext';
-import type { EdiMessageType } from '../types/enums';
 
 type SimulatorLine = {
   source: 'mapping' | 'productId';
@@ -44,7 +43,6 @@ export function EdiSimulatorPage() {
   const lines = useFieldArray({ control, name: 'items' });
   const actor = watch('actor');
   const partnerId = watch('partnerId');
-  const messageType: EdiMessageType = actor === 'supplier' ? 'DESADV' : 'ORDERS';
 
   const partners = useQuery({ queryKey: ['edi-partners-simulator'], queryFn: () => ediApi.partners.list({ page: 0, size: 200, sort: 'code,asc' }) });
   const warehouses = useQuery({ queryKey: ['warehouses-simulator'], queryFn: () => warehousesApi.list({ page: 0, size: 200, sort: 'code,asc' }) });
@@ -89,8 +87,7 @@ export function EdiSimulatorPage() {
   });
 
   const partnerMappings = mappings.data?.content.filter((mapping) => (
-    mapping.messageType === messageType
-    && (!partnerId || mapping.partnerId === Number(partnerId))
+    !partnerId || mapping.partnerId === Number(partnerId)
   )) ?? [];
 
   return (
@@ -135,7 +132,7 @@ export function EdiSimulatorPage() {
                     {source === 'mapping' ? (
                       <Grid size={{ xs: 12, md: 5 }}>
                         <Controller control={control} name={`items.${index}.mappingId`} render={({ field }) => (
-                          <FormControl fullWidth><InputLabel>Mapping</InputLabel><Select {...field} label="Mapping" value={field.value || ''}>{partnerMappings.map((mapping) => <MenuItem key={mapping.id} value={mapping.id}>{mapping.partnerCode} / {mapping.externalProductCode} - {mapping.internalSku}</MenuItem>)}</Select></FormControl>
+                          <FormControl fullWidth><InputLabel>Mapping</InputLabel><Select {...field} label="Mapping" value={field.value || ''}>{partnerMappings.map((mapping) => <MenuItem key={mapping.id} value={mapping.id}>{mapping.partnerCode} / {mapping.externalProductCode} - {mapping.internalSku} · {mapping.internalProductName}</MenuItem>)}</Select></FormControl>
                         )} />
                       </Grid>
                     ) : (

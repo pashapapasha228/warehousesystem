@@ -19,6 +19,9 @@ public interface EdiMappingConfigRepository extends JpaRepository<EdiMappingConf
     Page<EdiMappingConfig> findAll(Pageable pageable);
 
     @EntityGraph(attributePaths = {"partner", "internalProduct"})
+    Page<EdiMappingConfig> findByPartner_Id(Long partnerId, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"partner", "internalProduct"})
     @Query("""
             select m from EdiMappingConfig m
             join m.partner p
@@ -31,15 +34,41 @@ public interface EdiMappingConfigRepository extends JpaRepository<EdiMappingConf
             """)
     Page<EdiMappingConfig> search(@Param("search") String search, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"partner", "internalProduct"})
+    @Query("""
+            select m from EdiMappingConfig m
+            join m.partner p
+            join m.internalProduct product
+            where p.id = :partnerId
+              and (
+                   lower(m.externalProductCode) like lower(concat('%', :search, '%'))
+                or lower(p.code) like lower(concat('%', :search, '%'))
+                or lower(p.name) like lower(concat('%', :search, '%'))
+                or lower(product.sku) like lower(concat('%', :search, '%'))
+                or lower(product.name) like lower(concat('%', :search, '%'))
+              )
+            """)
+    Page<EdiMappingConfig> searchByPartner(@Param("partnerId") Long partnerId, @Param("search") String search, Pageable pageable);
+
     Optional<EdiMappingConfig> findByPartner_IdAndMessageTypeAndExternalProductCodeAndIsActiveTrue(
             Long partnerId,
             EdiMessageType messageType,
             String externalProductCode
     );
 
+    List<EdiMappingConfig> findAllByPartner_IdAndExternalProductCodeAndIsActiveTrue(
+            Long partnerId,
+            String externalProductCode
+    );
+
     Optional<EdiMappingConfig> findByPartner_IdAndMessageTypeAndExternalProductCode(
             Long partnerId,
             EdiMessageType messageType,
+            String externalProductCode
+    );
+
+    List<EdiMappingConfig> findAllByPartner_IdAndExternalProductCode(
+            Long partnerId,
             String externalProductCode
     );
 

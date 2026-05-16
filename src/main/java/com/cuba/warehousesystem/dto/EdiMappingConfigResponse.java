@@ -12,6 +12,7 @@ public record EdiMappingConfigResponse(
         String externalProductCode,
         Long internalProductId,
         String internalSku,
+        String internalProductName,
         Boolean isActive,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

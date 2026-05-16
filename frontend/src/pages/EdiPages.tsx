@@ -1,12 +1,14 @@
-import { Delete, Send } from '@mui/icons-material';
-import { Alert, Box, Button, Card, CardContent, FormControl, IconButton, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
+import { Add, ArrowBack, Delete, Send } from '@mui/icons-material';
+import { Alert, Box, Button, Card, CardContent, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, IconButton, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ediApi, operationsApi, productsApi, storageCellsApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
 import { useAuth } from '../auth/useAuth';
 import { ResourcePage } from '../components/ResourcePage';
+import { ConfirmDialog } from '../components/feedback/ConfirmDialog';
 import { ErrorState, LoadingState } from '../components/feedback/StateViews';
 import { BoolChip } from '../components/tables/ResourceTable';
 import { ResourceTable } from '../components/tables/ResourceTable';
@@ -14,7 +16,7 @@ import { canManageEdi } from '../utils/permissions';
 import { fmtDate } from '../utils/format';
 import { useTableSort } from '../utils/sorting';
 import { ediMessageStatuses, ediMessageTypeLabels, ediMessageTypes, ediQueueStatuses, type EdiMessageType } from '../types/enums';
-import type { EdiMapping, EdiQueueItem, Product, StockBalance, StorageCell } from '../types/api';
+import type { EdiMapping, EdiPartner, EdiQueueItem, Product, StockBalance, StorageCell } from '../types/api';
 
 const inboundPayloadExamples: Record<EdiMessageType, string> = {
   DESADV: '{\n  "warehouseId": 1,\n  "documentDate": "2026-05-14",\n  "items": [\n    {\n      "externalProductCode": "SUPPLIER-SKU-001",\n      "quantity": 5,\n      "toCellId": 1,\n      "unitPrice": 10\n    }\n  ]\n}',
@@ -23,6 +25,8 @@ const inboundPayloadExamples: Record<EdiMessageType, string> = {
 };
 
 export function EdiPartnersPage() {
+  const navigate = useNavigate();
+
   return (
     <ResourcePage
       title="EDI-партнеры"
@@ -48,32 +52,272 @@ export function EdiPartnersPage() {
         { name: 'outboundEnabled', label: 'Исходящие включены', type: 'checkbox' },
         { name: 'isActive', label: 'Активно', type: 'checkbox' },
       ]}
+      onView={(partner) => navigate(`/edi/partners/${partner.id}`)}
     />
   );
 }
 
-export function EdiMappingsPage() {
+export function EdiPartnerCardPage() {
+  const { id } = useParams();
+  const partnerId = Number(id);
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const allowed = canManageEdi(user?.role);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(10);
+  const [search, setSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [editing, setEditing] = useState<EdiMapping | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [deleting, setDeleting] = useState<EdiMapping | null>(null);
+  const [notice, setNotice] = useState('');
+  const tableSort = useTableSort('externalProductCode', 'asc');
+
+  const partner = useQuery({
+    queryKey: ['edi-partner', partnerId],
+    queryFn: () => ediApi.partners.get(partnerId),
+    enabled: Number.isFinite(partnerId),
+  });
+  const mappings = useQuery({
+    queryKey: ['edi-partner-mappings', partnerId, page, size, tableSort.sort, appliedSearch],
+    queryFn: () => ediApi.mappings.list({ page, size, sort: tableSort.sort, partnerId, search: appliedSearch || undefined }),
+    enabled: Number.isFinite(partnerId),
+  });
+  const products = useQuery({
+    queryKey: ['edi-mapping-products'],
+    queryFn: () => productsApi.list({ page: 0, size: 1000, sort: 'sku,asc' }),
+    enabled: allowed,
+  });
+
+  const invalidateMappings = () => {
+    queryClient.invalidateQueries({ queryKey: ['edi-partner-mappings', partnerId] });
+    queryClient.invalidateQueries({ queryKey: ['edi-mappings'] });
+    queryClient.invalidateQueries({ queryKey: ['edi-mappings-simulator'] });
+    queryClient.invalidateQueries({ queryKey: ['edi-process-mappings'] });
+  };
+
+  const saveMapping = useMutation({
+    mutationFn: (data: MappingFormData) => {
+      const body = { partnerId, ...data };
+      return editing?.id ? ediApi.mappings.update(editing.id, body) : ediApi.mappings.create(body);
+    },
+    onSuccess: () => {
+      setNotice(editing ? 'Маппинг обновлен.' : 'Маппинг создан.');
+      setFormOpen(false);
+      setEditing(null);
+      invalidateMappings();
+    },
+    onError: (error) => setNotice(getErrorMessage(error)),
+  });
+
+  const deleteMapping = useMutation({
+    mutationFn: (mapping: EdiMapping) => ediApi.mappings.delete(mapping.id),
+    onSuccess: () => {
+      setNotice('Маппинг удален.');
+      setDeleting(null);
+      invalidateMappings();
+    },
+    onError: (error) => setNotice(getErrorMessage(error)),
+  });
+
+  if (!Number.isFinite(partnerId)) {
+    return <ErrorState message="Некорректный ID EDI-партнера" />;
+  }
+
   return (
-    <ResourcePage
-      title="EDI-маппинги товаров"
-      queryKey="edi-mappings"
-      api={ediApi.mappings}
-      canEdit={canManageEdi}
-      columns={[
-        { key: 'partnerCode', label: 'Партнер' },
-        { key: 'messageType', label: 'Тип' },
-        { key: 'externalProductCode', label: 'Внешний код' },
-        { key: 'internalSku', label: 'SKU' },
-        { key: 'isActive', label: 'Статус', render: (r) => <BoolChip value={r.isActive} /> },
-      ]}
-      fields={[
-        { name: 'partnerId', label: 'ID партнера', type: 'number', required: true },
-        { name: 'messageType', label: 'Тип сообщения', type: 'select', required: true, options: ediMessageTypes.map((v) => ({ value: v, label: ediMessageTypeLabels[v] })) },
-        { name: 'externalProductCode', label: 'Внешний код товара', required: true },
-        { name: 'internalProductId', label: 'ID внутреннего товара', type: 'number', required: true },
-        { name: 'isActive', label: 'Активно', type: 'checkbox' },
-      ]}
-    />
+    <Stack spacing={2}>
+      <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+        <Button startIcon={<ArrowBack />} onClick={() => navigate('/edi/partners')}>К партнерам</Button>
+        <Box sx={{ flex: 1, minWidth: 240 }}>
+          <Typography variant="h4">Карточка EDI-партнера</Typography>
+          {partner.data && <Typography color="text.secondary">{partner.data.code} · {partner.data.name}</Typography>}
+        </Box>
+        {allowed && <Button variant="contained" startIcon={<Add />} onClick={() => { setEditing(null); setFormOpen(true); }}>Создать маппинг</Button>}
+      </Box>
+
+      {notice && <Alert severity={notice.includes('создан') || notice.includes('обновлен') || notice.includes('удален') ? 'success' : 'error'} onClose={() => setNotice('')}>{notice}</Alert>}
+      {partner.isLoading && <LoadingState />}
+      {partner.isError && <ErrorState message={getErrorMessage(partner.error)} />}
+      {partner.data && <EdiPartnerSummary partner={partner.data} />}
+      {!allowed && <Alert severity="info">Ваша роль разрешает просмотр, но не изменение маппингов партнера.</Alert>}
+
+      <Card>
+        <CardContent>
+          <Stack spacing={2}>
+            <Box display="flex" gap={1} flexWrap="wrap" alignItems="center">
+              <TextField
+                label="Поиск маппинга"
+                placeholder="Внешний код, SKU, товар..."
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                size="small"
+                sx={{ flex: '1 1 280px', maxWidth: 520 }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    setAppliedSearch(search.trim());
+                    setPage(0);
+                  }
+                }}
+              />
+              <Button variant="outlined" onClick={() => { setAppliedSearch(search.trim()); setPage(0); }}>Найти</Button>
+              {appliedSearch && <Button onClick={() => { setSearch(''); setAppliedSearch(''); setPage(0); }}>Сбросить</Button>}
+            </Box>
+            {mappings.isLoading && <LoadingState />}
+            {mappings.isError && <ErrorState message={getErrorMessage(mappings.error)} />}
+            {mappings.data && (
+              <ResourceTable
+                rows={mappings.data.content}
+                total={mappings.data.totalElements}
+                page={page}
+                size={size}
+                onPageChange={setPage}
+                onSizeChange={(next) => { setSize(next); setPage(0); }}
+                {...tableSort.tableSortProps}
+                onSortChange={(sortBy, sortDirection) => {
+                  tableSort.tableSortProps.onSortChange(sortBy, sortDirection);
+                  setPage(0);
+                }}
+                onEdit={allowed ? (mapping) => { setEditing(mapping); setFormOpen(true); } : undefined}
+                onDelete={allowed ? setDeleting : undefined}
+                columns={[
+                  { key: 'externalProductCode', label: 'Внешний код товара' },
+                  { key: 'internalSku', label: 'Внутренний SKU' },
+                  { key: 'internalProductName', label: 'Название' },
+                  { key: 'isActive', label: 'Статус', render: (row) => <BoolChip value={row.isActive} /> },
+                ]}
+              />
+            )}
+          </Stack>
+        </CardContent>
+      </Card>
+
+      <MappingDialog
+        open={formOpen}
+        editing={editing}
+        products={products.data?.content ?? []}
+        onClose={() => { setFormOpen(false); setEditing(null); }}
+        onSubmit={(data) => saveMapping.mutateAsync(data)}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        title="Удалить маппинг?"
+        text="Маппинг будет отключен и перестанет использоваться при обработке EDI."
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && deleteMapping.mutate(deleting)}
+      />
+    </Stack>
+  );
+}
+
+function EdiPartnerSummary({ partner }: { partner: EdiPartner }) {
+  return (
+    <Card>
+      <CardContent>
+        <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: 'repeat(4, 1fr)' }} gap={2}>
+          <InfoItem label="Код" value={partner.code} />
+          <InfoItem label="Название" value={partner.name} />
+          <InfoItem label="GLN" value={partner.gln || '—'} />
+          <InfoItem label="Контрагент" value={partner.counterpartyName || '—'} />
+          <InfoItem label="Склад по умолчанию" value={partner.defaultWarehouseCode || '—'} />
+          <InfoItem label="Входящие" value={<BoolChip value={partner.inboundEnabled} />} />
+          <InfoItem label="Исходящие" value={<BoolChip value={partner.outboundEnabled} />} />
+          <InfoItem label="Статус" value={<BoolChip value={partner.isActive} />} />
+        </Box>
+      </CardContent>
+    </Card>
+  );
+}
+
+function InfoItem({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <Box>
+      <Typography variant="caption" color="text.secondary">{label}</Typography>
+      <Typography component="div" fontWeight={600}>{value}</Typography>
+    </Box>
+  );
+}
+
+type MappingFormData = {
+  externalProductCode: string;
+  internalProductId: number;
+  isActive: boolean;
+};
+
+function MappingDialog({
+  open,
+  editing,
+  products,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  editing: EdiMapping | null;
+  products: Product[];
+  onClose: () => void;
+  onSubmit: (data: MappingFormData) => Promise<unknown>;
+}) {
+  const [externalProductCode, setExternalProductCode] = useState('');
+  const [internalProductId, setInternalProductId] = useState('');
+  const [isActive, setIsActive] = useState(true);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setExternalProductCode(editing?.externalProductCode ?? '');
+    setInternalProductId(editing?.internalProductId ? String(editing.internalProductId) : '');
+    setIsActive(editing?.isActive !== false);
+    setError('');
+    setSubmitting(false);
+  }, [editing, open]);
+
+  const submit = async () => {
+    const productId = Number(internalProductId);
+    if (!externalProductCode.trim()) {
+      setError('Укажите внешний код товара.');
+      return;
+    }
+    if (!Number.isFinite(productId) || productId <= 0) {
+      setError('Выберите внутренний товар.');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await onSubmit({ externalProductCode: externalProductCode.trim(), internalProductId: productId, isActive });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>{editing ? 'Редактирование маппинга' : 'Создание маппинга'}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+          <TextField label="Внешний код товара" value={externalProductCode} onChange={(event) => setExternalProductCode(event.target.value)} required fullWidth />
+          <FormControl fullWidth>
+            <InputLabel>Внутренний товар</InputLabel>
+            <Select label="Внутренний товар" value={internalProductId} onChange={(event) => setInternalProductId(String(event.target.value))}>
+              {products.map((product) => <MenuItem key={product.id} value={product.id}>{product.sku} · {product.name}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl fullWidth>
+            <InputLabel>Статус</InputLabel>
+            <Select label="Статус" value={isActive ? 'true' : 'false'} onChange={(event) => setIsActive(event.target.value === 'true')}>
+              <MenuItem value="true">Активно</MenuItem>
+              <MenuItem value="false">Выключено</MenuItem>
+            </Select>
+          </FormControl>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Отмена</Button>
+        <Button variant="contained" disabled={submitting} onClick={submit}>Сохранить</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -439,7 +683,6 @@ function resolvePayloadProduct(
   if (!item.externalProductCode || !queueItem) return undefined;
   const mapping = mappings.find((candidate) => candidate.isActive !== false
     && candidate.externalProductCode === item.externalProductCode
-    && candidate.messageType === queueItem.messageType
     && (!queueItem.partnerCode || candidate.partnerCode === queueItem.partnerCode));
   return mapping ? products.find((product) => product.id === mapping.internalProductId) : undefined;
 }

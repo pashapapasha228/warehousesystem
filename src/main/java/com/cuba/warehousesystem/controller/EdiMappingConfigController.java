@@ -43,9 +43,10 @@ public class EdiMappingConfigController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ResponseEntity<Page<EdiMappingConfigResponse>> getAll(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) Long partnerId,
             Pageable pageable
     ) {
-        return ResponseEntity.ok(ediMappingConfigService.getAll(search, pageable));
+        return ResponseEntity.ok(ediMappingConfigService.getAll(search, partnerId, pageable));
     }
 
     @PutMapping("/{id}")

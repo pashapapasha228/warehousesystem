@@ -702,9 +702,8 @@ public class DemoDataInitializer implements ApplicationRunner {
 
     private void upsertDemoMapping(EdiPartner partner, EdiMessageType type, Product product) {
         List<EdiMappingConfig> existingMappings = ediMappingConfigRepository
-                .findAllByPartner_IdAndMessageTypeAndExternalProductCode(
+                .findAllByPartner_IdAndExternalProductCode(
                         partner.getId(),
-                        type,
                         partner.getCode() + "-" + product.getSku()
                 );
         EdiMappingConfig mapping = existingMappings.isEmpty() ? new EdiMappingConfig() : existingMappings.get(0);
@@ -713,7 +712,7 @@ public class DemoDataInitializer implements ApplicationRunner {
             ediMappingConfigRepository.save(duplicate);
         });
         mapping.setPartner(partner);
-        mapping.setMessageType(type);
+        mapping.setMessageType(mapping.getMessageType() == null ? type : mapping.getMessageType());
         mapping.setExternalProductCode(partner.getCode() + "-" + product.getSku());
         mapping.setInternalProduct(product);
         mapping.setIsActive(true);

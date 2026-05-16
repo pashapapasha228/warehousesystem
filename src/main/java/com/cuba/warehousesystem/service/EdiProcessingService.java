@@ -299,9 +299,8 @@ public class EdiProcessingService {
             if (item.mappingId() != null) {
                 EdiMappingConfig mapping = ediMappingConfigRepository.findById(item.mappingId())
                         .orElseThrow(() -> new EntityNotFoundException("EDI mapping not found"));
-                if (!mapping.getPartner().getId().equals(partner.getId()) || mapping.getMessageType() != messageType
-                        || !Boolean.TRUE.equals(mapping.getIsActive())) {
-                    throw new BadRequestException("Selected mapping does not match partner/message type.");
+                if (!mapping.getPartner().getId().equals(partner.getId()) || !Boolean.TRUE.equals(mapping.getIsActive())) {
+                    throw new BadRequestException("Selected mapping does not match partner.");
                 }
                 payloadItem.put("externalProductCode", mapping.getExternalProductCode());
             } else if (item.productId() != null) {
@@ -531,10 +530,11 @@ public class EdiProcessingService {
         }
 
         EdiMappingConfig mapping = ediMappingConfigRepository
-                .findByPartner_IdAndMessageTypeAndExternalProductCodeAndIsActiveTrue(
+                .findAllByPartner_IdAndExternalProductCodeAndIsActiveTrue(
                         message.getPartner().getId(),
-                        message.getMessageType(),
                         externalProductCode)
+                .stream()
+                .findFirst()
                 .orElseThrow(() -> new BadRequestException("No active EDI product mapping for external code: " + externalProductCode));
         return mapping.getInternalProduct();
     }

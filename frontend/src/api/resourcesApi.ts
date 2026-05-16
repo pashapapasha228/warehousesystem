@@ -78,6 +78,7 @@ export const ediApi = {
   audit: (params?: PageParams) => list<EdiAuditLog>('/edi/audit', params),
   partners: {
     list: (params?: PageParams) => list<EdiPartner>('/edi/partners', params),
+    get: (id: number) => getOne<EdiPartner>('/edi/partners', id),
     create: (body: Partial<EdiPartner>) => createOne<EdiPartner, Partial<EdiPartner>>('/edi/partners', body),
     update: (id: number, body: Partial<EdiPartner>) => updateOne<EdiPartner, Partial<EdiPartner>>('/edi/partners', id, body),
     delete: (id: number) => deleteOne('/edi/partners', id),

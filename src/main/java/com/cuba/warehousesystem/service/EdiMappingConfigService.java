@@ -4,6 +4,7 @@ import com.cuba.warehousesystem.dto.EdiMappingConfigRequest;
 import com.cuba.warehousesystem.dto.EdiMappingConfigResponse;
 import com.cuba.warehousesystem.exception.EntityNotFoundException;
 import com.cuba.warehousesystem.model.EdiMappingConfig;
+import com.cuba.warehousesystem.model.EdiMessageType;
 import com.cuba.warehousesystem.model.EdiPartner;
 import com.cuba.warehousesystem.model.Product;
 import com.cuba.warehousesystem.repository.EdiMappingConfigRepository;
@@ -37,9 +38,15 @@ public class EdiMappingConfigService {
     }
 
     @Transactional(readOnly = true)
-    public Page<EdiMappingConfigResponse> getAll(String search, Pageable pageable) {
+    public Page<EdiMappingConfigResponse> getAll(String search, Long partnerId, Pageable pageable) {
+        if (StringUtils.hasText(search) && partnerId != null) {
+            return ediMappingConfigRepository.searchByPartner(partnerId, search.trim(), pageable).map(this::toResponse);
+        }
         if (StringUtils.hasText(search)) {
             return ediMappingConfigRepository.search(search.trim(), pageable).map(this::toResponse);
+        }
+        if (partnerId != null) {
+            return ediMappingConfigRepository.findByPartner_Id(partnerId, pageable).map(this::toResponse);
         }
         return ediMappingConfigRepository.findAll(pageable).map(this::toResponse);
     }
@@ -63,7 +70,9 @@ public class EdiMappingConfigService {
                 .orElseThrow(() -> new EntityNotFoundException("Product not found"));
 
         mapping.setPartner(partner);
-        mapping.setMessageType(request.messageType());
+        if (mapping.getMessageType() == null) {
+            mapping.setMessageType(EdiMessageType.DESADV);
+        }
         mapping.setExternalProductCode(request.externalProductCode());
         mapping.setInternalProduct(product);
         mapping.setIsActive(request.isActive() == null || request.isActive());
@@ -83,6 +92,7 @@ public class EdiMappingConfigService {
                 mapping.getExternalProductCode(),
                 mapping.getInternalProduct().getId(),
                 mapping.getInternalProduct().getSku(),
+                mapping.getInternalProduct().getName(),
                 mapping.getIsActive(),
                 mapping.getCreatedAt(),
                 mapping.getUpdatedAt()

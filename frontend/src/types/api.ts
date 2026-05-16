@@ -212,10 +212,10 @@ export type EdiMapping = {
   id: number;
   partnerId: number;
   partnerCode?: string;
-  messageType: EdiMessageType;
   externalProductCode: string;
   internalProductId: number;
   internalSku?: string;
+  internalProductName?: string;
   isActive?: boolean;
 };
 

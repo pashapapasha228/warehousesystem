@@ -4,7 +4,7 @@ import { RoleGuard } from '../auth/RoleGuard';
 import { AppLayout } from '../components/layout/AppLayout';
 import { CounterpartiesPage, ProductsPage, StorageCellsPage, WarehousesPage } from '../pages/CatalogPages';
 import { DashboardPage } from '../pages/DashboardPage';
-import { EdiAuditPage, EdiMappingsPage, EdiMessagesPage, EdiPartnersPage, EdiQueuePage } from '../pages/EdiPages';
+import { EdiAuditPage, EdiMessagesPage, EdiPartnerCardPage, EdiPartnersPage, EdiQueuePage } from '../pages/EdiPages';
 import { EdiSimulatorPage } from '../pages/EdiSimulatorPage';
 import { LoginPage } from '../pages/LoginPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
@@ -40,7 +40,8 @@ export const router = createBrowserRouter([
           { path: 'edi/simulator', element: <RoleGuard roles={['ADMIN', 'MANAGER']}><EdiSimulatorPage /></RoleGuard> },
           { path: 'edi/queue', element: <EdiQueuePage /> },
           { path: 'edi/partners', element: <EdiPartnersPage /> },
-          { path: 'edi/mappings', element: <EdiMappingsPage /> },
+          { path: 'edi/partners/:id', element: <EdiPartnerCardPage /> },
+          { path: 'edi/mappings', element: <Navigate to="/edi/partners" replace /> },
           { path: 'edi/audit', element: <RoleGuard roles={['ADMIN', 'MANAGER']}><EdiAuditPage /></RoleGuard> },
           { path: 'reports', element: <ReportsPage /> },
           { path: 'users', element: <RoleGuard roles={['ADMIN']}><UsersPage /></RoleGuard> },
