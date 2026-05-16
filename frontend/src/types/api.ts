@@ -201,8 +201,9 @@ export type EdiPartner = {
   gln?: string;
   counterpartyId?: number;
   counterpartyName?: string;
-  defaultWarehouseId?: number;
-  defaultWarehouseCode?: string;
+  counterpartyType?: CounterpartyType;
+  warehouseIds?: number[];
+  warehouses?: Array<{ id: number; code: string; name: string }>;
   inboundEnabled?: boolean;
   outboundEnabled?: boolean;
   isActive?: boolean;

@@ -7,15 +7,21 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import lombok.EqualsAndHashCode;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "edi_partners")
@@ -40,9 +46,15 @@ public class EdiPartner {
     @JoinColumn(name = "counterparty_id")
     private Counterparty counterparty;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "default_warehouse_id")
-    private Warehouse defaultWarehouse;
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "edi_partner_warehouses",
+            joinColumns = @JoinColumn(name = "partner_id"),
+            inverseJoinColumns = @JoinColumn(name = "warehouse_id")
+    )
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private Set<Warehouse> warehouses = new LinkedHashSet<>();
 
     @Column(name = "inbound_enabled", nullable = false)
     private Boolean inboundEnabled = true;

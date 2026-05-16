@@ -365,7 +365,7 @@ public class DemoDataInitializer implements ApplicationRunner {
                 c("CUS-EDUTECH", "ГУО \"Центр образовательных технологий\"", CounterpartyType.CUSTOMER, "191444555", "4810002220055", "supply@edutech.by", "+375 17 260-71-30", "г. Минск, ул. Захарова, 59", "Поставки для классов"),
                 c("CUS-LOGISTIC24", "ООО \"Логистик24\"", CounterpartyType.CUSTOMER, "191555666", "4810002220062", "support@logistic24.by", "+375 17 288-44-02", "Минский район, д. Колядичи, 15", "Интеграция по EDI ORDERS"),
                 c("CUS-RETAILHUB", "ООО \"Ритейл Хаб\"", CounterpartyType.CUSTOMER, "191666777", "4810002220079", "edi@retailhub.by", "+375 17 365-15-70", "г. Минск, ул. Маяковского, 127", "EDI ORDERS/ORDRSP"),
-                c("CUS-REGIONPLUS", "ООО \"РегионПлюс\"", CounterpartyType.CUSTOMER, "590333444", "4810002220086", "office@regionplus.by", "+375 152 68-40-15", "г. Гродно, ул. Курчатова, 18", "Отгрузки со склада Гродно"),
+                c("CUS-REGIONPLUS", "ООО \"РегионПлюс\"", CounterpartyType.BOTH, "590333444", "4810002220086", "office@regionplus.by", "+375 152 68-40-15", "г. Гродно, ул. Курчатова, 18", "Отгрузки со склада Гродно"),
                 c("CUS-CLOUDPARK", "ООО \"КлаудПарк\"", CounterpartyType.CUSTOMER, "191777888", "4810002220093", "dc@cloudpark.by", "+375 17 310-40-90", "г. Минск, ул. Академика Купревича, 3", "Серверное оборудование"),
                 c("CUS-PRINTLINE", "ООО \"ПринтЛайн\"", CounterpartyType.CUSTOMER, "191888999", "4810002220109", "orders@printline.by", "+375 17 390-80-66", "г. Минск, ул. Передовая, 6", "Расходники и маркировка"),
                 c("CUS-TECHUNION", "ООО \"ТехЮнион\"", CounterpartyType.CUSTOMER, "191999000", "4810002220116", "purchasing@techunion.by", "+375 17 224-18-19", "г. Минск, ул. Платонова, 20Б", "Проектные закупки"),
@@ -506,8 +506,8 @@ public class DemoDataInitializer implements ApplicationRunner {
 
         List<Product> productList = new ArrayList<>(products.values());
         List<StorageCell> cellList = cells.values().stream().filter(cell -> Boolean.TRUE.equals(cell.getIsActive())).toList();
-        List<Counterparty> suppliers = counterparties.values().stream().filter(c -> c.getType() == CounterpartyType.SUPPLIER).toList();
-        List<Counterparty> customers = counterparties.values().stream().filter(c -> c.getType() == CounterpartyType.CUSTOMER).toList();
+        List<Counterparty> suppliers = counterparties.values().stream().filter(c -> c.getType().canActAsSupplier()).toList();
+        List<Counterparty> customers = counterparties.values().stream().filter(c -> c.getType().canActAsCustomer()).toList();
         List<User> operators = List.of(users.get("warehouse_manager"), users.get("warehouse_worker_1"), users.get("warehouse_worker_2"), users.get("manager"));
         LocalDateTime base = LocalDateTime.now().minusDays(125);
 
@@ -643,7 +643,7 @@ public class DemoDataInitializer implements ApplicationRunner {
         for (int i = 1; i <= 30; i++) {
             String messageRef = "DEMO-EDI-MSG-%04d".formatted(i);
             EdiPartner partner = partners.get(i % partners.size());
-            boolean supplier = partner.getCounterparty().getType() == CounterpartyType.SUPPLIER;
+            boolean supplier = partner.getCounterparty().getType().canActAsSupplier();
             EdiMessageType type = i % 5 == 0
                     ? EdiMessageType.ORDRSP
                     : supplier ? EdiMessageType.DESADV : EdiMessageType.ORDERS;
@@ -683,7 +683,7 @@ public class DemoDataInitializer implements ApplicationRunner {
     }
 
     private List<EdiMessageType> supportedMappingTypes(EdiPartner partner) {
-        if (partner.getCounterparty().getType() == CounterpartyType.SUPPLIER) {
+        if (partner.getCounterparty().getType().canActAsSupplier()) {
             return List.of(EdiMessageType.DESADV, EdiMessageType.ORDRSP);
         }
         return List.of(EdiMessageType.ORDERS, EdiMessageType.ORDRSP);
@@ -738,7 +738,8 @@ public class DemoDataInitializer implements ApplicationRunner {
         partner.setName(name);
         partner.setGln(counterparty.getGln());
         partner.setCounterparty(counterparty);
-        partner.setDefaultWarehouse(warehouse);
+        partner.getWarehouses().clear();
+        partner.getWarehouses().add(warehouse);
         partner.setInboundEnabled(inbound);
         partner.setOutboundEnabled(outbound);
         partner.setIsActive(true);
@@ -1028,19 +1029,20 @@ public class DemoDataInitializer implements ApplicationRunner {
     }
 
     private Warehouse ediPayloadWarehouse(EdiMessageType type, EdiPartner partner, List<Product> products, int quantity) {
+        Warehouse primaryWarehouse = partner.getWarehouses().stream().findFirst().orElse(null);
         if (type != EdiMessageType.ORDERS) {
-            return partner.getDefaultWarehouse();
+            return primaryWarehouse;
         }
-        boolean defaultWarehouseHasStock = products.stream().anyMatch(product -> hasAvailableStock(product, partner.getDefaultWarehouse(), quantity));
+        boolean defaultWarehouseHasStock = products.stream().anyMatch(product -> hasAvailableStock(product, primaryWarehouse, quantity));
         if (defaultWarehouseHasStock) {
-            return partner.getDefaultWarehouse();
+            return primaryWarehouse;
         }
         return products.stream()
                 .flatMap(product -> stockBalanceRepository.findByProduct_Id(product.getId()).stream())
                 .filter(balance -> balance.getQuantity() - balance.getReservedQuantity() >= quantity)
                 .findFirst()
                 .map(balance -> balance.getCell().getWarehouse())
-                .orElse(partner.getDefaultWarehouse());
+                .orElse(primaryWarehouse);
     }
 
     private Product productForEdiLine(EdiMessageType type, Warehouse warehouse, List<Product> products, int offset, int quantity) {

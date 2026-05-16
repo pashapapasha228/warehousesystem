@@ -31,6 +31,7 @@ import com.cuba.warehousesystem.model.OperationType;
 import com.cuba.warehousesystem.model.Product;
 import com.cuba.warehousesystem.model.StockBalance;
 import com.cuba.warehousesystem.model.StorageCell;
+import com.cuba.warehousesystem.model.Warehouse;
 import com.cuba.warehousesystem.repository.EdiAuditLogRepository;
 import com.cuba.warehousesystem.repository.EdiMappingConfigRepository;
 import com.cuba.warehousesystem.repository.EdiMessageRepository;
@@ -208,8 +209,8 @@ public class EdiProcessingService {
     public EdiMessageResponse simulateSupplierDesadv(EdiSimulationRequest request) {
         EdiPartner partner = ediPartnerRepository.findById(request.partnerId())
                 .orElseThrow(() -> new EntityNotFoundException("EDI partner not found"));
-        if (partner.getCounterparty() == null || partner.getCounterparty().getType() != CounterpartyType.SUPPLIER) {
-            throw new BadRequestException("Supplier simulation requires an EDI partner linked to a supplier.");
+        if (partner.getCounterparty() == null || !partner.getCounterparty().getType().canActAsSupplier()) {
+            throw new BadRequestException("Supplier simulation requires an EDI partner linked to a supplier-capable counterparty.");
         }
         return receiveInbound(new EdiMessageReceiveRequest(
                 partner.getId(),
@@ -230,8 +231,8 @@ public class EdiProcessingService {
     public EdiMessageResponse simulateCustomerOrders(EdiSimulationRequest request) {
         EdiPartner partner = ediPartnerRepository.findById(request.partnerId())
                 .orElseThrow(() -> new EntityNotFoundException("EDI partner not found"));
-        if (partner.getCounterparty() == null || partner.getCounterparty().getType() != CounterpartyType.CUSTOMER) {
-            throw new BadRequestException("Customer simulation requires an EDI partner linked to a customer.");
+        if (partner.getCounterparty() == null || !partner.getCounterparty().getType().canActAsCustomer()) {
+            throw new BadRequestException("Customer simulation requires an EDI partner linked to a customer-capable counterparty.");
         }
         return receiveInbound(new EdiMessageReceiveRequest(
                 partner.getId(),
@@ -328,11 +329,14 @@ public class EdiProcessingService {
         OperationType operationType = resolveOperationType(message);
 
         Long warehouseId = readLong(payload, "warehouseId");
-        if (warehouseId == null && message.getPartner().getDefaultWarehouse() != null) {
-            warehouseId = message.getPartner().getDefaultWarehouse().getId();
+        if (warehouseId == null) {
+            warehouseId = message.getPartner().getWarehouses().stream()
+                    .findFirst()
+                    .map(Warehouse::getId)
+                    .orElse(null);
         }
         if (warehouseId == null) {
-            throw new BadRequestException("EDI payload must contain warehouseId or partner default warehouse must be set.");
+            throw new BadRequestException("EDI payload must contain warehouseId or partner warehouses must be set.");
         }
 
         Long counterpartyId = readLong(payload, "counterpartyId");
@@ -377,10 +381,10 @@ public class EdiProcessingService {
         }
 
         CounterpartyType counterpartyType = message.getPartner().getCounterparty().getType();
-        if (message.getMessageType() == EdiMessageType.DESADV && counterpartyType == CounterpartyType.SUPPLIER) {
+        if (message.getMessageType() == EdiMessageType.DESADV && counterpartyType.canActAsSupplier()) {
             return OperationType.INCOME;
         }
-        if (message.getMessageType() == EdiMessageType.ORDERS && counterpartyType == CounterpartyType.CUSTOMER) {
+        if (message.getMessageType() == EdiMessageType.ORDERS && counterpartyType.canActAsCustomer()) {
             return OperationType.OUTCOME;
         }
 
@@ -388,7 +392,7 @@ public class EdiProcessingService {
                 "Unsupported EDI scenario: " + message.getMessageType()
                         + " " + message.getDirection()
                         + " from " + counterpartyType
-                        + ". Expected DESADV from SUPPLIER or ORDERS from CUSTOMER."
+                        + ". Expected DESADV from supplier-capable or ORDERS from customer-capable counterparty."
         );
     }
 

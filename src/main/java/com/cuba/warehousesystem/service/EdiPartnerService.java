@@ -2,6 +2,7 @@ package com.cuba.warehousesystem.service;
 
 import com.cuba.warehousesystem.dto.EdiPartnerRequest;
 import com.cuba.warehousesystem.dto.EdiPartnerResponse;
+import com.cuba.warehousesystem.dto.EdiPartnerWarehouseResponse;
 import com.cuba.warehousesystem.exception.BadRequestException;
 import com.cuba.warehousesystem.exception.EntityNotFoundException;
 import com.cuba.warehousesystem.model.Counterparty;
@@ -16,6 +17,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+
+import java.util.Comparator;
+import java.util.LinkedHashSet;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -70,7 +75,8 @@ public class EdiPartnerService {
         partner.setName(request.name());
         partner.setGln(request.gln());
         partner.setCounterparty(request.counterpartyId() == null ? null : findCounterparty(request.counterpartyId()));
-        partner.setDefaultWarehouse(request.defaultWarehouseId() == null ? null : findWarehouse(request.defaultWarehouseId()));
+        partner.getWarehouses().clear();
+        partner.getWarehouses().addAll(resolveWarehouses(request.warehouseIds()));
         partner.setInboundEnabled(request.inboundEnabled() == null || request.inboundEnabled());
         partner.setOutboundEnabled(request.outboundEnabled() != null && request.outboundEnabled());
         partner.setIsActive(request.isActive() == null || request.isActive());
@@ -91,6 +97,18 @@ public class EdiPartnerService {
                 .orElseThrow(() -> new EntityNotFoundException("Warehouse not found"));
     }
 
+    private List<Warehouse> resolveWarehouses(List<Long> warehouseIds) {
+        if (warehouseIds == null || warehouseIds.isEmpty()) {
+            return List.of();
+        }
+        return warehouseIds.stream()
+                .filter(id -> id != null)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
+                .stream()
+                .map(this::findWarehouse)
+                .toList();
+    }
+
     private EdiPartnerResponse toResponse(EdiPartner partner) {
         return new EdiPartnerResponse(
                 partner.getId(),
@@ -99,8 +117,18 @@ public class EdiPartnerService {
                 partner.getGln(),
                 partner.getCounterparty() == null ? null : partner.getCounterparty().getId(),
                 partner.getCounterparty() == null ? null : partner.getCounterparty().getName(),
-                partner.getDefaultWarehouse() == null ? null : partner.getDefaultWarehouse().getId(),
-                partner.getDefaultWarehouse() == null ? null : partner.getDefaultWarehouse().getCode(),
+                partner.getCounterparty() == null ? null : partner.getCounterparty().getType(),
+                partner.getWarehouses().stream()
+                        .map(Warehouse::getId)
+                        .toList(),
+                partner.getWarehouses().stream()
+                        .sorted(Comparator.comparing(Warehouse::getCode))
+                        .map(warehouse -> new EdiPartnerWarehouseResponse(
+                                warehouse.getId(),
+                                warehouse.getCode(),
+                                warehouse.getName()
+                        ))
+                        .toList(),
                 partner.getInboundEnabled(),
                 partner.getOutboundEnabled(),
                 partner.getIsActive(),

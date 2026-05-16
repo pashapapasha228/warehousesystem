@@ -1,7 +1,7 @@
 import { Add, Delete } from '@mui/icons-material';
 import { Alert, Button, Card, CardContent, FormControl, Grid2 as Grid, IconButton, InputLabel, MenuItem, Select, Stack, TextField, Typography } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useFieldArray, useForm } from 'react-hook-form';
 import { ediApi, productsApi, warehousesApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
@@ -32,7 +32,7 @@ export function EdiSimulatorPage() {
   const queryClient = useQueryClient();
   const { warehouseId } = useWarehouseContext();
   const [notice, setNotice] = useState('');
-  const { control, register, handleSubmit, watch } = useForm<SimulatorForm>({
+  const { control, register, handleSubmit, watch, setValue } = useForm<SimulatorForm>({
     defaultValues: {
       actor: 'supplier',
       warehouseId: warehouseId || '',
@@ -43,6 +43,7 @@ export function EdiSimulatorPage() {
   const lines = useFieldArray({ control, name: 'items' });
   const actor = watch('actor');
   const partnerId = watch('partnerId');
+  const selectedWarehouseId = watch('warehouseId');
 
   const partners = useQuery({ queryKey: ['edi-partners-simulator'], queryFn: () => ediApi.partners.list({ page: 0, size: 200, sort: 'code,asc' }) });
   const warehouses = useQuery({ queryKey: ['warehouses-simulator'], queryFn: () => warehousesApi.list({ page: 0, size: 200, sort: 'code,asc' }) });
@@ -89,6 +90,33 @@ export function EdiSimulatorPage() {
   const partnerMappings = mappings.data?.content.filter((mapping) => (
     !partnerId || mapping.partnerId === Number(partnerId)
   )) ?? [];
+  const partnerOptions = partners.data?.content.filter((partner) => (
+    actor === 'supplier'
+      ? (partner.counterpartyType === 'SUPPLIER' || partner.counterpartyType === 'BOTH') && partner.outboundEnabled !== false
+      : (partner.counterpartyType === 'CUSTOMER' || partner.counterpartyType === 'BOTH') && partner.outboundEnabled !== false
+  )) ?? [];
+  const selectedPartner = partnerOptions.find((partner) => partner.id === Number(partnerId));
+  const warehouseOptions = selectedPartner?.warehouses?.length ? selectedPartner.warehouses : warehouses.data?.content ?? [];
+
+  useEffect(() => {
+    const selected = partners.data?.content.find((partner) => partner.id === Number(partnerId));
+    if (!selected) return;
+    const validType = actor === 'supplier'
+      ? selected.counterpartyType === 'SUPPLIER' || selected.counterpartyType === 'BOTH'
+      : selected.counterpartyType === 'CUSTOMER' || selected.counterpartyType === 'BOTH';
+    if (!validType || selected.outboundEnabled === false) {
+      setValue('partnerId', '');
+      setValue('warehouseId', '');
+    }
+  }, [actor, partnerId, partners.data?.content, setValue]);
+
+  useEffect(() => {
+    if (!selectedPartner?.warehouses?.length) return;
+    const currentWarehouseId = Number(selectedWarehouseId);
+    if (!selectedPartner.warehouses.some((warehouse) => warehouse.id === currentWarehouseId)) {
+      setValue('warehouseId', selectedPartner.warehouses[0].id);
+    }
+  }, [selectedPartner, selectedWarehouseId, setValue]);
 
   return (
     <Stack spacing={2}>
@@ -107,12 +135,12 @@ export function EdiSimulatorPage() {
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Controller control={control} name="partnerId" render={({ field }) => (
-                  <FormControl fullWidth><InputLabel>EDI-партнер</InputLabel><Select {...field} label="EDI-партнер" value={field.value || ''}>{partners.data?.content.map((partner) => <MenuItem key={partner.id} value={partner.id}>{partner.code} - {partner.name}</MenuItem>)}</Select></FormControl>
+                  <FormControl fullWidth><InputLabel>EDI-партнер</InputLabel><Select {...field} label="EDI-партнер" value={field.value || ''}>{partnerOptions.map((partner) => <MenuItem key={partner.id} value={partner.id}>{partner.code} - {partner.name}</MenuItem>)}</Select></FormControl>
                 )} />
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Controller control={control} name="warehouseId" render={({ field }) => (
-                  <FormControl fullWidth><InputLabel>Склад</InputLabel><Select {...field} label="Склад" value={field.value || ''}>{warehouses.data?.content.map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</MenuItem>)}</Select></FormControl>
+                  <FormControl fullWidth><InputLabel>Склад</InputLabel><Select {...field} label="Склад" value={field.value || ''}>{warehouseOptions.map((warehouse) => <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</MenuItem>)}</Select></FormControl>
                 )} />
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="Номер документа" {...register('documentNumber')} /></Grid>

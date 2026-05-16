@@ -51,7 +51,7 @@ const sortAliases: Record<string, Record<string, string>> = {
   },
   '/edi/partners': {
     counterpartyName: 'counterparty.name',
-    defaultWarehouseCode: 'defaultWarehouse.code',
+    warehouses: 'code',
   },
   '/edi/mappings': {
     partnerCode: 'partner.code',

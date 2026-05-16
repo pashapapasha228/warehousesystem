@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ediApi, operationsApi, productsApi, storageCellsApi } from '../api/resourcesApi';
+import { ediApi, operationsApi, productsApi, storageCellsApi, warehousesApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
 import { useAuth } from '../auth/useAuth';
 import { ResourcePage } from '../components/ResourcePage';
@@ -26,6 +26,10 @@ const inboundPayloadExamples: Record<EdiMessageType, string> = {
 
 export function EdiPartnersPage() {
   const navigate = useNavigate();
+  const warehouses = useQuery({
+    queryKey: ['edi-partner-form-warehouses'],
+    queryFn: () => warehousesApi.list({ page: 0, size: 500, sort: 'code,asc' }),
+  });
 
   return (
     <ResourcePage
@@ -38,7 +42,7 @@ export function EdiPartnersPage() {
         { key: 'name', label: 'Название' },
         { key: 'gln', label: 'GLN' },
         { key: 'counterpartyName', label: 'Контрагент' },
-        { key: 'defaultWarehouseCode', label: 'Склад' },
+        { key: 'warehouses', label: 'Склады', render: (row) => row.warehouses?.map((warehouse) => warehouse.code).join(', ') || '—', sortKey: false },
         { key: 'inboundEnabled', label: 'Inbound', render: (r) => <BoolChip value={r.inboundEnabled} /> },
         { key: 'outboundEnabled', label: 'Outbound', render: (r) => <BoolChip value={r.outboundEnabled} /> },
       ]}
@@ -47,7 +51,7 @@ export function EdiPartnersPage() {
         { name: 'name', label: 'Название', required: true },
         { name: 'gln', label: 'GLN' },
         { name: 'counterpartyId', label: 'ID контрагента', type: 'number' },
-        { name: 'defaultWarehouseId', label: 'ID склада по умолчанию', type: 'number' },
+        { name: 'warehouseIds', label: 'Склады', type: 'multiselect', options: warehouses.data?.content.map((warehouse) => ({ value: warehouse.id, label: `${warehouse.code} · ${warehouse.name}` })) ?? [] },
         { name: 'inboundEnabled', label: 'Входящие включены', type: 'checkbox' },
         { name: 'outboundEnabled', label: 'Исходящие включены', type: 'checkbox' },
         { name: 'isActive', label: 'Активно', type: 'checkbox' },
@@ -219,7 +223,7 @@ function EdiPartnerSummary({ partner }: { partner: EdiPartner }) {
           <InfoItem label="Название" value={partner.name} />
           <InfoItem label="GLN" value={partner.gln || '—'} />
           <InfoItem label="Контрагент" value={partner.counterpartyName || '—'} />
-          <InfoItem label="Склад по умолчанию" value={partner.defaultWarehouseCode || '—'} />
+          <InfoItem label="Склады" value={partner.warehouses?.map((warehouse) => warehouse.code).join(', ') || '—'} />
           <InfoItem label="Входящие" value={<BoolChip value={partner.inboundEnabled} />} />
           <InfoItem label="Исходящие" value={<BoolChip value={partner.outboundEnabled} />} />
           <InfoItem label="Статус" value={<BoolChip value={partner.isActive} />} />

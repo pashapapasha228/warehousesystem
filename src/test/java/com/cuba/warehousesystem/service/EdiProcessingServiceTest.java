@@ -291,7 +291,7 @@ class EdiProcessingServiceTest {
         partner.setId(1L);
         partner.setCode(type == CounterpartyType.SUPPLIER ? "SUP-EDI" : "CUS-EDI");
         partner.setCounterparty(counterparty);
-        partner.setDefaultWarehouse(warehouse);
+        partner.getWarehouses().add(warehouse);
         partner.setInboundEnabled(true);
         partner.setIsActive(true);
         return partner;

@@ -19,7 +19,7 @@ import { useEffect } from 'react';
 export type FieldDef = {
   name: string;
   label: string;
-  type?: 'text' | 'number' | 'checkbox' | 'select' | 'password' | 'textarea' | 'date';
+  type?: 'text' | 'number' | 'checkbox' | 'select' | 'multiselect' | 'password' | 'textarea' | 'date';
   required?: boolean;
   options?: Array<{ value: string | number | boolean; label: string }>;
 };
@@ -42,7 +42,7 @@ export function ResourceFormDialog({
   const { control, handleSubmit, reset, formState: { isSubmitting } } = useForm<Record<string, any>>({ defaultValues: {} });
 
   useEffect(() => {
-    const defaults = Object.fromEntries(fields.map((field) => [field.name, field.type === 'checkbox' ? true : '']));
+    const defaults = Object.fromEntries(fields.map((field) => [field.name, field.type === 'checkbox' ? true : field.type === 'multiselect' ? [] : '']));
     reset({ ...defaults, ...initialValues });
   }, [fields, initialValues, reset, open]);
 
@@ -76,6 +76,24 @@ export function ResourceFormDialog({
                     <FormControl fullWidth error={!!fieldState.error}>
                       <InputLabel>{field.label}</InputLabel>
                       <Select {...controllerField} label={field.label} value={controllerField.value ?? ''}>
+                        {field.options?.map((option) => <MenuItem key={String(option.value)} value={option.value as any}>{option.label}</MenuItem>)}
+                      </Select>
+                    </FormControl>
+                  );
+                }
+                if (field.type === 'multiselect') {
+                  return (
+                    <FormControl fullWidth error={!!fieldState.error}>
+                      <InputLabel>{field.label}</InputLabel>
+                      <Select
+                        multiple
+                        {...controllerField}
+                        label={field.label}
+                        value={Array.isArray(controllerField.value) ? controllerField.value : []}
+                        renderValue={(selected) => (selected as Array<string | number | boolean>)
+                          .map((value) => field.options?.find((option) => option.value === value)?.label ?? String(value))
+                          .join(', ')}
+                      >
                         {field.options?.map((option) => <MenuItem key={String(option.value)} value={option.value as any}>{option.label}</MenuItem>)}
                       </Select>
                     </FormControl>

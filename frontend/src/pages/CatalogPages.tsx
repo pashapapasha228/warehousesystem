@@ -120,7 +120,7 @@ export function CounterpartiesPage() {
       fields={[
         { name: 'code', label: 'Код', required: true },
         { name: 'name', label: 'Название', required: true },
-        { name: 'type', label: 'Тип', type: 'select', required: true, options: [{ value: 'SUPPLIER', label: 'Поставщик' }, { value: 'CUSTOMER', label: 'Клиент' }] },
+        { name: 'type', label: 'Тип', type: 'select', required: true, options: [{ value: 'SUPPLIER', label: 'Поставщик' }, { value: 'CUSTOMER', label: 'Клиент' }, { value: 'BOTH', label: 'Клиент и поставщик' }] },
         { name: 'taxId', label: 'УНП/ИНН' },
         { name: 'gln', label: 'GLN' },
         { name: 'email', label: 'Email' },

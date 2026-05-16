@@ -13,15 +13,21 @@ import java.util.Optional;
 
 @Repository
 public interface EdiPartnerRepository extends JpaRepository<EdiPartner, Long> {
+    @Override
+    @EntityGraph(attributePaths = {"counterparty", "warehouses"})
+    Optional<EdiPartner> findById(Long id);
+
+    @Override
+    Page<EdiPartner> findAll(Pageable pageable);
+
     Optional<EdiPartner> findByCode(String code);
 
     boolean existsByCode(String code);
 
-    @EntityGraph(attributePaths = {"counterparty", "defaultWarehouse"})
     @Query("""
-            select p from EdiPartner p
+            select distinct p from EdiPartner p
             left join p.counterparty c
-            left join p.defaultWarehouse w
+            left join p.warehouses w
             where lower(p.code) like lower(concat('%', :search, '%'))
                or lower(p.name) like lower(concat('%', :search, '%'))
                or lower(coalesce(p.gln, '')) like lower(concat('%', :search, '%'))
