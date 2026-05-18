@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { warehousesApi } from '../api/resourcesApi';
+import { useAuth } from '../auth/useAuth';
 import type { Warehouse } from '../types/api';
 
 const WAREHOUSE_CONTEXT_KEY = 'warehouse.context.id';
@@ -16,17 +17,19 @@ type WarehouseContextValue = {
 const WarehouseContext = createContext<WarehouseContextValue | null>(null);
 
 export function WarehouseProvider({ children }: PropsWithChildren) {
+  const { user, loading } = useAuth();
   const [warehouseId, setWarehouseIdState] = useState<number | null>(() => {
     const stored = localStorage.getItem(WAREHOUSE_CONTEXT_KEY);
     return stored ? Number(stored) : null;
   });
 
   const warehousesQuery = useQuery({
-    queryKey: ['warehouse-context-options'],
+    queryKey: ['warehouse-context-options', user?.id],
     queryFn: () => warehousesApi.list({ page: 0, size: 200, sort: 'code,asc' }),
+    enabled: !loading && !!user,
   });
 
-  const warehouses = warehousesQuery.data?.content ?? [];
+  const warehouses = user ? warehousesQuery.data?.content ?? [] : [];
   const selectedWarehouse = warehouses.find((warehouse) => warehouse.id === warehouseId);
 
   const setWarehouseId = (nextWarehouseId: number | null) => {
