@@ -9,13 +9,19 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Optional;
 
 @Repository
 public interface EdiMessageRepository extends JpaRepository<EdiMessage, Long> {
     long countByStatus(EdiMessageStatus status);
 
+    long countByStatusIn(Collection<EdiMessageStatus> statuses);
+
     long countByMessageType(EdiMessageType messageType);
+
+    long countByReceivedAtBetween(LocalDateTime start, LocalDateTime end);
 
     boolean existsByMessageRef(String messageRef);
 
@@ -34,4 +40,7 @@ public interface EdiMessageRepository extends JpaRepository<EdiMessage, Long> {
 
     @EntityGraph(attributePaths = {"partner", "relatedOperation"})
     Page<EdiMessage> findByStatus(EdiMessageStatus status, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"partner", "relatedOperation"})
+    Page<EdiMessage> findByStatusIn(Collection<EdiMessageStatus> statuses, Pageable pageable);
 }

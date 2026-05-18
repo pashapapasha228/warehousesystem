@@ -15,9 +15,9 @@ export const ediMessageTypes: EdiMessageType[] = ['ORDERS', 'DESADV', 'ORDRSP'];
 export const ediMessageStatuses: EdiMessageStatus[] = ['RECEIVED', 'NORMALIZED', 'PROCESSING', 'PROCESSED', 'COMPLETED', 'FAILED'];
 
 export const ediMessageTypeLabels: Record<EdiMessageType, string> = {
-  ORDERS: 'ORDERS: customer order',
-  DESADV: 'DESADV: supplier shipment notice',
-  ORDRSP: 'ORDRSP: order response',
+  ORDERS: 'ORDERS: заказ клиента',
+  DESADV: 'DESADV: уведомление поставщика',
+  ORDRSP: 'ORDRSP: ответ на заказ',
 };
 
 export const roleLabels: Record<UserRole, string> = {

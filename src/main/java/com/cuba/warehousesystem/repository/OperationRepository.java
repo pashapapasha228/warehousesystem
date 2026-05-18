@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -51,6 +52,9 @@ public interface OperationRepository extends JpaRepository<Operation, Long> {
     @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty"})
     Page<Operation> findByWarehouse_IdAndTypeAndStatus(Long warehouseId, OperationType type, OperationStatus status, Pageable pageable);
 
+    @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty"})
+    Page<Operation> findByStatusIn(Collection<OperationStatus> statuses, Pageable pageable);
+
     @EntityGraph(attributePaths = {"warehouse", "createdBy", "completedBy", "counterparty", "items", "items.product", "items.fromCell", "items.toCell"})
     @Query("""
             select distinct o from Operation o
@@ -76,6 +80,14 @@ public interface OperationRepository extends JpaRepository<Operation, Long> {
     List<Operation> findByCreatedAtBetweenAndStatus(LocalDateTime start, LocalDateTime end, OperationStatus status);
 
     long countByStatus(OperationStatus status);
+
+    long countByTypeAndStatus(OperationType type, OperationStatus status);
+
+    long countByStatusIn(Collection<OperationStatus> statuses);
+
+    long countByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    long countByCompletedAtBetween(LocalDateTime start, LocalDateTime end);
 
     boolean existsByOperationNumber(String operationNumber);
 }

@@ -112,8 +112,11 @@ public class ReportController {
 
     @GetMapping("/dashboard")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
-    public ResponseEntity<DashboardReport> getDashboardReport() {
-        return ResponseEntity.ok(reportService.getDashboardReport());
+    public ResponseEntity<DashboardReport> getDashboardReport(
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(defaultValue = "1") int periodDays
+    ) {
+        return ResponseEntity.ok(reportService.getDashboardReport(warehouseId, periodDays));
     }
 
     @GetMapping("/low-stock")

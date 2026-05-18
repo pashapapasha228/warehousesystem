@@ -2,7 +2,7 @@ import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 export function fmtDate(value?: string) {
-  if (!value) return '—';
+  if (!value) return '-';
   try {
     return format(parseISO(value), 'dd.MM.yyyy HH:mm', { locale: ru });
   } catch {
@@ -11,7 +11,7 @@ export function fmtDate(value?: string) {
 }
 
 export function n(value?: number | string | null, suffix = '') {
-  if (value === undefined || value === null || value === '') return '—';
+  if (value === undefined || value === null || value === '') return '-';
   return `${Number(value).toLocaleString('ru-RU')}${suffix}`;
 }
 

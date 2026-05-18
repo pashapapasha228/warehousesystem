@@ -3,7 +3,7 @@ import { Alert, Box, Button, Card, CardContent, Dialog, DialogActions, DialogCon
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ediApi, operationsApi, productsApi, storageCellsApi, warehousesApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
 import { useAuth } from '../auth/useAuth';
@@ -409,13 +409,20 @@ function InboundEdiForm() {
 
 export function EdiQueuePage() {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
-  const [ediStatus, setEdiStatus] = useState<EdiMessageStatus | ''>('');
+  const [ediStatus, setEdiStatus] = useState<EdiMessageStatus | ''>((searchParams.get('ediStatus') as EdiMessageStatus | null) || '');
   const [selected, setSelected] = useState<EdiQueueItem | null>(null);
   const [allocations, setAllocations] = useState<AllocationState>({});
   const [notice, setNotice] = useState('');
   const tableSort = useTableSort('id', 'desc');
+
+  useEffect(() => {
+    setEdiStatus((searchParams.get('ediStatus') as EdiMessageStatus | null) || '');
+    setPage(0);
+  }, [searchParams]);
+
   const query = useQuery({ queryKey: ['edi-queue', page, size, ediStatus, tableSort.sort], queryFn: () => ediApi.queue({ page, size, sort: tableSort.sort, ediStatus: ediStatus || undefined }) });
   const selectedPayload = parsePayload(selected?.normalizedPayload);
   const cells = useQuery({

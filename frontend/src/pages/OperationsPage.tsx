@@ -1,8 +1,8 @@
 import { Add, Refresh } from '@mui/icons-material';
 import { Box, Button, Chip, FormControl, InputLabel, MenuItem, Select, Stack, Typography } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { operationsApi } from '../api/resourcesApi';
 import { getErrorMessage } from '../api/http';
 import { useWarehouseContext } from '../app/WarehouseContext';
@@ -13,13 +13,21 @@ import { fmtDate } from '../utils/format';
 import { useTableSort } from '../utils/sorting';
 
 export function OperationsPage() {
+  const [searchParams] = useSearchParams();
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
-  const [type, setType] = useState('');
-  const [status, setStatus] = useState('');
+  const [type, setType] = useState(searchParams.get('type') || '');
+  const [status, setStatus] = useState(searchParams.get('status') || '');
   const tableSort = useTableSort('id', 'desc');
   const navigate = useNavigate();
   const { warehouseId } = useWarehouseContext();
+
+  useEffect(() => {
+    setType(searchParams.get('type') || '');
+    setStatus(searchParams.get('status') || '');
+    setPage(0);
+  }, [searchParams]);
+
   const query = useQuery({
     queryKey: ['operations', page, size, type, status, warehouseId, tableSort.sort],
     queryFn: () => operationsApi.list({ page, size, sort: tableSort.sort, type: type || undefined, status: status || undefined, warehouseId: warehouseId || undefined }),

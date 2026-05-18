@@ -307,21 +307,104 @@ export type User = {
 };
 
 export type DashboardReport = {
-  activeProducts: number;
-  activeWarehouses: number;
-  activeStorageCells: number;
+  kpi: DashboardKpi;
+  attentionItems: AttentionItem[];
+  receivingQueue: DashboardWorkQueueItem[];
+  shippingQueue: DashboardWorkQueueItem[];
+  ediSummary: DashboardEdiSummary;
+  cellUtilization: DashboardCellUtilizationSummary;
+  stockWarnings: DashboardStockWarning[];
+  recentOperations: DashboardRecentOperation[];
+};
+
+export type DashboardKpi = {
+  expectedReceiving: number;
+  readyToShip: number;
+  pendingEdi: number;
+  failedEdi: number;
+  zeroStockProducts: number;
+  belowMinProducts: number;
+  averageVolumeUtilization: number;
+  averageWeightUtilization: number;
   completedOperations: number;
   draftOperations: number;
-  totalStockQuantity: number;
-  lowStockProducts: number;
-  pendingEdiMessages: number;
-  failedEdiMessages: number;
-  mostUtilizedCells: Array<{
-    cellCode: string;
-    currentVolume?: number;
-    maxVolume?: number;
-    currentWeight?: number;
-    maxWeight?: number;
-  }>;
-  lowStockAlerts: Array<{ productName: string; sku: string; warehouseId: number; warehouseCode: string; currentStock: number; minLevel: number }>;
+};
+
+export type AttentionItem = {
+  type: string;
+  severity: 'success' | 'info' | 'warning' | 'error' | string;
+  priority: number;
+  title: string;
+  detail: string;
+  actionLabel: string;
+  actionUrl: string;
+};
+
+export type DashboardWorkQueueItem = {
+  id: number;
+  source: 'EDI' | 'OPERATION' | string;
+  partnerName?: string;
+  documentNumber?: string;
+  itemCount: number;
+  status: string;
+  messageType?: EdiMessageType;
+  operationType?: OperationType;
+  actionLabel: string;
+  actionUrl: string;
+};
+
+export type DashboardEdiSummary = {
+  receivedToday: number;
+  queued: number;
+  processed: number;
+  failed: number;
+  problemMessages: DashboardEdiProblem[];
+};
+
+export type DashboardEdiProblem = {
+  id: number;
+  messageType: EdiMessageType;
+  status: EdiMessageStatus;
+  partnerName?: string;
+  errorMessage?: string;
+  actionUrl: string;
+};
+
+export type DashboardCellUtilizationSummary = {
+  averageVolumePercent: number;
+  averageWeightPercent: number;
+  cellsAbove80Percent: number;
+  cellsAbove90Percent: number;
+  topCells: DashboardCellLoad[];
+};
+
+export type DashboardCellLoad = {
+  id?: number;
+  warehouseCode?: string;
+  cellCode: string;
+  volumePercent?: number;
+  weightPercent?: number;
+  actionUrl: string;
+};
+
+export type DashboardStockWarning = {
+  productName: string;
+  sku: string;
+  warehouseId: number;
+  warehouseCode: string;
+  currentStock: number;
+  minLevel: number;
+  status: 'Нет остатка' | 'Ниже минимума' | string;
+  actionUrl: string;
+};
+
+export type DashboardRecentOperation = {
+  id: number;
+  occurredAt?: string;
+  type: OperationType;
+  status: OperationStatus;
+  operationNumber: string;
+  warehouseCode?: string;
+  username?: string;
+  actionUrl: string;
 };

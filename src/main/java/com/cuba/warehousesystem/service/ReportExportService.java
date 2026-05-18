@@ -196,15 +196,16 @@ public class ReportExportService {
 
     private void writeDashboard(Sheet sheet, DashboardReport report) {
         writeHeader(sheet, "metric", "value");
-        writeRow(sheet, 1, "active_products", report.activeProducts());
-        writeRow(sheet, 2, "active_warehouses", report.activeWarehouses());
-        writeRow(sheet, 3, "active_storage_cells", report.activeStorageCells());
-        writeRow(sheet, 4, "completed_operations", report.completedOperations());
-        writeRow(sheet, 5, "draft_operations", report.draftOperations());
-        writeRow(sheet, 6, "total_stock_quantity", report.totalStockQuantity());
-        writeRow(sheet, 7, "low_stock_products", report.lowStockProducts());
-        writeRow(sheet, 8, "pending_edi_messages", report.pendingEdiMessages());
-        writeRow(sheet, 9, "failed_edi_messages", report.failedEdiMessages());
+        writeRow(sheet, 1, "expected_receiving", report.kpi().expectedReceiving());
+        writeRow(sheet, 2, "ready_to_ship", report.kpi().readyToShip());
+        writeRow(sheet, 3, "pending_edi_messages", report.kpi().pendingEdi());
+        writeRow(sheet, 4, "failed_edi_messages", report.kpi().failedEdi());
+        writeRow(sheet, 5, "zero_stock_products", report.kpi().zeroStockProducts());
+        writeRow(sheet, 6, "below_min_products", report.kpi().belowMinProducts());
+        writeRow(sheet, 7, "average_volume_utilization", report.kpi().averageVolumeUtilization());
+        writeRow(sheet, 8, "average_weight_utilization", report.kpi().averageWeightUtilization());
+        writeRow(sheet, 9, "completed_operations", report.kpi().completedOperations());
+        writeRow(sheet, 10, "draft_operations", report.kpi().draftOperations());
     }
 
     private void writeHeader(Sheet sheet, String... values) {

@@ -57,11 +57,11 @@ export function AppLayout() {
     { to: '/counterparties', label: 'Контрагенты', icon: <PeopleAlt /> },
     { to: '/operations', label: 'Операции', icon: <MoveDown /> },
     { to: '/stock-balances', label: 'Остатки', icon: <QrCode2 /> },
-    { to: '/edi/messages', label: 'EDI сообщения', icon: <LocalShipping /> },
-    { to: '/edi/simulator', label: 'External messages', icon: <LocalShipping /> },
-    { to: '/edi/queue', label: 'EDI очередь', icon: <LocalShipping /> },
-    { to: '/edi/partners', label: 'EDI партнеры', icon: <LocalShipping /> },
-    ...(user?.role === 'ADMIN' || user?.role === 'MANAGER' ? [{ to: '/edi/audit', label: 'EDI аудит', icon: <LocalShipping /> }] : []),
+    { to: '/edi/messages', label: 'EDI-сообщения', icon: <LocalShipping /> },
+    { to: '/edi/simulator', label: 'Внешние сообщения', icon: <LocalShipping /> },
+    { to: '/edi/queue', label: 'EDI-очередь', icon: <LocalShipping /> },
+    { to: '/edi/partners', label: 'EDI-партнеры', icon: <LocalShipping /> },
+    ...(user?.role === 'ADMIN' || user?.role === 'MANAGER' ? [{ to: '/edi/audit', label: 'EDI-аудит', icon: <LocalShipping /> }] : []),
     { to: '/reports', label: 'Отчеты', icon: <Assessment /> },
     ...(canManageUsers(user?.role) ? [{ to: '/users', label: 'Пользователи', icon: <Group /> }] : []),
   ];
@@ -120,7 +120,7 @@ export function AppLayout() {
               value={warehouseId ?? ''}
               onChange={(event) => setWarehouseId(event.target.value ? Number(event.target.value) : null)}
             >
-              <MenuItem value="">All warehouses</MenuItem>
+              <MenuItem value="">Все склады</MenuItem>
               {warehouses.map((warehouse) => (
                 <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</MenuItem>
               ))}

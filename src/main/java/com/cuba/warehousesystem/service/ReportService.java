@@ -12,6 +12,7 @@ import com.cuba.warehousesystem.dto.SupplierStatsReport;
 import com.cuba.warehousesystem.dto.TopProductReport;
 import com.cuba.warehousesystem.dto.TurnoverReport;
 import com.cuba.warehousesystem.model.AuditLog;
+import com.cuba.warehousesystem.model.EdiMessage;
 import com.cuba.warehousesystem.model.EdiMessageStatus;
 import com.cuba.warehousesystem.model.EdiMessageType;
 import com.cuba.warehousesystem.model.Operation;
@@ -31,10 +32,14 @@ import com.cuba.warehousesystem.repository.ProductRepository;
 import com.cuba.warehousesystem.repository.StockBalanceRepository;
 import com.cuba.warehousesystem.repository.StorageCellRepository;
 import com.cuba.warehousesystem.repository.WarehouseRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,6 +69,7 @@ public class ReportService {
     private final EdiMessageRepository ediMessageRepository;
     private final EdiProcessingQueueRepository ediProcessingQueueRepository;
     private final AuditLogRepository auditLogRepository;
+    private final ObjectMapper objectMapper;
 
     @Cacheable(value = "turnover", key = "{#start, #end}")
     public TurnoverReport calculateTurnover(LocalDateTime start, LocalDateTime end) {
@@ -258,17 +264,186 @@ public class ReportService {
                 .toList());
     }
 
-    @Cacheable("dashboard")
+    public DashboardReport getDashboardReport(Long warehouseId, int periodDays) {
+        int safePeriodDays = periodDays <= 1 ? 1 : periodDays >= 30 ? 30 : 7;
+        LocalDateTime periodEnd = LocalDateTime.now();
+        LocalDateTime periodStart = safePeriodDays == 1
+                ? periodEnd.toLocalDate().atStartOfDay()
+                : periodEnd.minusDays(safePeriodDays);
+        LocalDateTime todayStart = periodEnd.toLocalDate().atStartOfDay();
+        LocalDateTime tomorrowStart = todayStart.plusDays(1);
+        List<EdiMessageStatus> pendingStatuses = List.of(
+                EdiMessageStatus.RECEIVED,
+                EdiMessageStatus.NORMALIZED,
+                EdiMessageStatus.PROCESSING
+        );
+        List<OperationStatus> openOperationStatuses = List.of(OperationStatus.DRAFT, OperationStatus.SHIPPED);
+
+        List<Operation> operations = operationRepository.findAll().stream()
+                .filter(operation -> matchesWarehouse(operation, warehouseId))
+                .toList();
+        List<EdiMessage> ediMessages = ediMessageRepository.findAll().stream()
+                .filter(message -> matchesWarehouse(message, warehouseId))
+                .toList();
+        List<DashboardReport.StockWarningItem> stockWarnings = findLowStockAlerts().stream()
+                .filter(alert -> warehouseId == null || Objects.equals(alert.warehouseId(), warehouseId))
+                .sorted(Comparator.comparing((ProductAlert alert) -> alert.currentStock() > 0)
+                        .thenComparing(ProductAlert::productName))
+                .map(this::toStockWarningItem)
+                .toList();
+        List<DashboardReport.CellLoadItem> cellLoads = storageCellRepository.findAll().stream()
+                .filter(cell -> warehouseId == null || Objects.equals(cell.getWarehouse().getId(), warehouseId))
+                .map(this::toDashboardCellLoadItem)
+                .toList();
+        List<DashboardReport.CellLoadItem> topCells = cellLoads.stream()
+                .sorted(Comparator.comparing(this::dashboardCellMaxUtilizationPercent).reversed())
+                .limit(10)
+                .toList();
+
+        long pendingEdi = ediMessages.stream().filter(message -> pendingStatuses.contains(message.getStatus())).count();
+        long failedEdi = ediMessages.stream().filter(message -> message.getStatus() == EdiMessageStatus.FAILED).count();
+        long desadvToProcess = ediMessages.stream()
+                .filter(message -> message.getMessageType() == EdiMessageType.DESADV)
+                .filter(message -> pendingStatuses.contains(message.getStatus()) || message.getStatus() == EdiMessageStatus.FAILED)
+                .count();
+        long ordersToProcess = ediMessages.stream()
+                .filter(message -> message.getMessageType() == EdiMessageType.ORDERS)
+                .filter(message -> pendingStatuses.contains(message.getStatus()) || message.getStatus() == EdiMessageStatus.FAILED)
+                .count();
+        long draftIncome = operations.stream()
+                .filter(operation -> operation.getType() == OperationType.INCOME && operation.getStatus() == OperationStatus.DRAFT)
+                .count();
+        long draftOutcome = operations.stream()
+                .filter(operation -> operation.getType() == OperationType.OUTCOME && operation.getStatus() == OperationStatus.DRAFT)
+                .count();
+        long completedOperations = operations.stream()
+                .filter(operation -> operation.getStatus() == OperationStatus.COMPLETED)
+                .filter(operation -> isBetween(operation.getCompletedAt(), periodStart, periodEnd))
+                .count();
+        long draftOperations = operations.stream()
+                .filter(operation -> openOperationStatuses.contains(operation.getStatus()))
+                .count();
+        long zeroStockProducts = stockWarnings.stream().filter(warning -> warning.currentStock() == 0).count();
+        long belowMinProducts = stockWarnings.stream().filter(warning -> warning.currentStock() > 0).count();
+
+        DashboardReport.DashboardKpi kpi = new DashboardReport.DashboardKpi(
+                desadvToProcess + draftIncome,
+                ordersToProcess + draftOutcome,
+                pendingEdi,
+                failedEdi,
+                zeroStockProducts,
+                belowMinProducts,
+                average(cellLoads.stream().map(DashboardReport.CellLoadItem::volumePercent).toList()),
+                average(cellLoads.stream().map(DashboardReport.CellLoadItem::weightPercent).toList()),
+                completedOperations,
+                draftOperations
+        );
+
+        DashboardReport.EdiSummary ediSummary = new DashboardReport.EdiSummary(
+                ediMessages.stream().filter(message -> isBetween(message.getReceivedAt(), todayStart, tomorrowStart)).count(),
+                pendingEdi,
+                ediMessages.stream().filter(message -> message.getStatus() == EdiMessageStatus.PROCESSED).count(),
+                failedEdi,
+                ediMessages.stream()
+                        .filter(message -> message.getStatus() == EdiMessageStatus.FAILED)
+                        .sorted(Comparator.comparing(EdiMessage::getReceivedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                        .limit(5)
+                        .map(this::toEdiProblemItem)
+                        .toList()
+        );
+
+        DashboardReport.CellUtilizationSummary cellUtilization = new DashboardReport.CellUtilizationSummary(
+                kpi.averageVolumeUtilization(),
+                kpi.averageWeightUtilization(),
+                cellLoads.stream().filter(cell -> dashboardCellMaxUtilizationPercent(cell) >= 80.0).count(),
+                cellLoads.stream().filter(cell -> dashboardCellMaxUtilizationPercent(cell) >= 90.0).count(),
+                topCells
+        );
+
+        return new DashboardReport(
+                kpi,
+                buildAttentionItems(operations, ediMessages, stockWarnings, cellLoads, pendingStatuses, openOperationStatuses),
+                buildReceivingQueue(operations, ediMessages, pendingStatuses),
+                buildShippingQueue(operations, ediMessages, pendingStatuses),
+                ediSummary,
+                cellUtilization,
+                stockWarnings,
+                operations.stream()
+                        .filter(operation -> isBetween(operationTimestamp(operation), periodStart, periodEnd))
+                        .sorted(Comparator.comparing(this::operationTimestamp, Comparator.nullsLast(Comparator.reverseOrder())))
+                        .limit(8)
+                        .map(this::toRecentOperationItem)
+                        .toList()
+        );
+    }
+
     public DashboardReport getDashboardReport() {
         List<ProductAlert> lowStockAlerts = findLowStockAlerts();
-        List<CellUtilizationReport.CellUtilizationItem> mostUtilizedCells = getCellUtilizationReport().utilizations().stream()
-                .sorted(Comparator.comparing(this::cellVolumeUtilizationPercent).reversed())
+        List<CellUtilizationReport.CellUtilizationItem> sortedUtilizedCells = getCellUtilizationReport().utilizations().stream()
+                .sorted(Comparator.comparing(this::cellMaxUtilizationPercent).reversed())
+                .toList();
+        List<CellUtilizationReport.CellUtilizationItem> mostUtilizedCells = sortedUtilizedCells.stream()
                 .limit(10)
+                .toList();
+        List<DashboardReport.CellLoadItem> overloadedCellItems = sortedUtilizedCells.stream()
+                .filter(cell -> cellMaxUtilizationPercent(cell) >= 90.0)
+                .limit(8)
+                .map(this::toCellLoadItem)
+                .toList();
+
+        Pageable actionPage = PageRequest.of(0, 6, Sort.by(Sort.Direction.DESC, "createdAt"));
+        List<DashboardReport.OperationActionItem> inboundOperations = operationRepository
+                .findByTypeAndStatus(OperationType.INCOME, OperationStatus.DRAFT, actionPage)
+                .getContent()
+                .stream()
+                .map(this::toOperationActionItem)
+                .toList();
+        List<DashboardReport.OperationActionItem> outboundOperations = operationRepository
+                .findByTypeAndStatus(OperationType.OUTCOME, OperationStatus.DRAFT, actionPage)
+                .getContent()
+                .stream()
+                .map(this::toOperationActionItem)
+                .toList();
+        List<DashboardReport.OperationActionItem> waitingOperationItems = operationRepository
+                .findByStatusIn(List.of(OperationStatus.DRAFT, OperationStatus.SHIPPED), actionPage)
+                .getContent()
+                .stream()
+                .map(this::toOperationActionItem)
+                .toList();
+
+        List<EdiMessageStatus> stuckStatuses = List.of(
+                EdiMessageStatus.RECEIVED,
+                EdiMessageStatus.NORMALIZED,
+                EdiMessageStatus.PROCESSING,
+                EdiMessageStatus.FAILED
+        );
+        List<DashboardReport.EdiActionItem> stuckEdiMessages = ediMessageRepository
+                .findByStatusIn(stuckStatuses, PageRequest.of(0, 6, Sort.by(Sort.Direction.DESC, "receivedAt")))
+                .getContent()
+                .stream()
+                .map(this::toEdiActionItem)
+                .toList();
+
+        LocalDateTime todayStart = LocalDateTime.now().toLocalDate().atStartOfDay();
+        LocalDateTime tomorrowStart = todayStart.plusDays(1);
+        DashboardReport.TodaySummary todaySummary = new DashboardReport.TodaySummary(
+                operationRepository.countByCreatedAtBetween(todayStart, tomorrowStart),
+                operationRepository.countByCompletedAtBetween(todayStart, tomorrowStart),
+                ediMessageRepository.countByReceivedAtBetween(todayStart, tomorrowStart)
+        );
+        List<DashboardReport.ActivityItem> todayActivity = auditLogRepository
+                .findTop10ByOccurredAtBetweenOrderByOccurredAtDesc(todayStart, tomorrowStart)
+                .stream()
+                .map(this::toActivityItem)
                 .toList();
 
         long totalStockQuantity = stockBalanceRepository.findAll().stream()
                 .mapToLong(StockBalance::getQuantity)
                 .sum();
+        long toReceiveCount = operationRepository.countByTypeAndStatus(OperationType.INCOME, OperationStatus.DRAFT);
+        long toShipCount = operationRepository.countByTypeAndStatus(OperationType.OUTCOME, OperationStatus.DRAFT);
+        long stuckEdiCount = ediMessageRepository.countByStatusIn(stuckStatuses);
+        long waitingOperationsCount = operationRepository.countByStatusIn(List.of(OperationStatus.DRAFT, OperationStatus.SHIPPED));
 
         return new DashboardReport(
                 productRepository.countByIsActiveTrue(),
@@ -283,8 +458,361 @@ public class ReportService {
                         + ediMessageRepository.countByStatus(EdiMessageStatus.PROCESSING),
                 ediMessageRepository.countByStatus(EdiMessageStatus.FAILED),
                 mostUtilizedCells,
-                lowStockAlerts
+                lowStockAlerts,
+                new DashboardReport.DashboardActionBlock(
+                        "Что принять",
+                        "Черновики приемки ждут фактической проверки.",
+                        toReceiveCount,
+                        toReceiveCount == 0 ? "success" : "warning",
+                        "Открыть приемки",
+                        "/operations?type=INCOME&status=DRAFT"
+                ),
+                new DashboardReport.DashboardActionBlock(
+                        "Что отгрузить",
+                        "Черновики отгрузки готовы к отправке.",
+                        toShipCount,
+                        toShipCount == 0 ? "success" : "warning",
+                        "Открыть отгрузки",
+                        "/operations?type=OUTCOME&status=DRAFT"
+                ),
+                new DashboardReport.DashboardActionBlock(
+                        "Что зависло в EDI",
+                        "Сообщения ожидают обработки или требуют разбора ошибки.",
+                        stuckEdiCount,
+                        stuckEdiCount == 0 ? "success" : "error",
+                        "Разобрать EDI",
+                        "/edi/queue"
+                ),
+                new DashboardReport.DashboardActionBlock(
+                        "Где не хватает товара",
+                        "Товары ниже минимального уровня по складам.",
+                        lowStockAlerts.size(),
+                        lowStockAlerts.isEmpty() ? "success" : "warning",
+                        "Проверить остатки",
+                        "/stock-balances"
+                ),
+                new DashboardReport.DashboardActionBlock(
+                        "Где перегружены ячейки",
+                        "Ячейки с загрузкой 90% и выше по весу или объему.",
+                        overloadedCellItems.size(),
+                        overloadedCellItems.isEmpty() ? "success" : "warning",
+                        "Открыть ячейки",
+                        "/storage-cells"
+                ),
+                new DashboardReport.DashboardActionBlock(
+                        "Какие операции ждут действия",
+                        "Черновики и отгрузки, ожидающие подтверждения клиента.",
+                        waitingOperationsCount,
+                        waitingOperationsCount == 0 ? "success" : "warning",
+                        "Открыть операции",
+                        "/operations"
+                ),
+                todaySummary,
+                inboundOperations,
+                outboundOperations,
+                waitingOperationItems,
+                stuckEdiMessages,
+                overloadedCellItems,
+                todayActivity
         );
+    }
+
+    private List<DashboardReport.WorkQueueItem> buildReceivingQueue(
+            List<Operation> operations,
+            List<EdiMessage> ediMessages,
+            List<EdiMessageStatus> pendingStatuses
+    ) {
+        List<DashboardReport.WorkQueueItem> items = new ArrayList<>();
+        ediMessages.stream()
+                .filter(message -> message.getMessageType() == EdiMessageType.DESADV)
+                .filter(message -> pendingStatuses.contains(message.getStatus()) || message.getStatus() == EdiMessageStatus.FAILED)
+                .sorted(Comparator.comparing(EdiMessage::getReceivedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(4)
+                .map(message -> toWorkQueueItem(message, "Обработать"))
+                .forEach(items::add);
+        operations.stream()
+                .filter(operation -> operation.getType() == OperationType.INCOME && operation.getStatus() == OperationStatus.DRAFT)
+                .sorted(Comparator.comparing(Operation::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(4)
+                .map(operation -> toWorkQueueItem(operation, "Принять"))
+                .forEach(items::add);
+        return items.stream().limit(6).toList();
+    }
+
+    private List<DashboardReport.WorkQueueItem> buildShippingQueue(
+            List<Operation> operations,
+            List<EdiMessage> ediMessages,
+            List<EdiMessageStatus> pendingStatuses
+    ) {
+        List<DashboardReport.WorkQueueItem> items = new ArrayList<>();
+        ediMessages.stream()
+                .filter(message -> message.getMessageType() == EdiMessageType.ORDERS)
+                .filter(message -> pendingStatuses.contains(message.getStatus()) || message.getStatus() == EdiMessageStatus.FAILED)
+                .sorted(Comparator.comparing(EdiMessage::getReceivedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(4)
+                .map(message -> toWorkQueueItem(message, "Обработать"))
+                .forEach(items::add);
+        operations.stream()
+                .filter(operation -> operation.getType() == OperationType.OUTCOME && operation.getStatus() == OperationStatus.DRAFT)
+                .sorted(Comparator.comparing(Operation::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(4)
+                .map(operation -> toWorkQueueItem(operation, "Отгрузить"))
+                .forEach(items::add);
+        return items.stream().limit(6).toList();
+    }
+
+    private List<DashboardReport.AttentionItem> buildAttentionItems(
+            List<Operation> operations,
+            List<EdiMessage> ediMessages,
+            List<DashboardReport.StockWarningItem> stockWarnings,
+            List<DashboardReport.CellLoadItem> cellLoads,
+            List<EdiMessageStatus> pendingStatuses,
+            List<OperationStatus> openOperationStatuses
+    ) {
+        List<DashboardReport.AttentionItem> items = new ArrayList<>();
+        ediMessages.stream()
+                .filter(message -> message.getStatus() == EdiMessageStatus.FAILED)
+                .limit(4)
+                .map(message -> new DashboardReport.AttentionItem(
+                        "EDI_ERROR",
+                        "error",
+                        1,
+                        "Ошибка EDI: " + message.getMessageType(),
+                        messagePartnerName(message) + " · " + Objects.requireNonNullElse(message.getErrorMessage(), "нужен разбор сообщения"),
+                        "Открыть",
+                        "/edi/queue?ediStatus=FAILED"
+                ))
+                .forEach(items::add);
+        stockWarnings.stream()
+                .filter(warning -> warning.currentStock() == 0)
+                .limit(4)
+                .map(warning -> new DashboardReport.AttentionItem(
+                        "ZERO_STOCK",
+                        "error",
+                        2,
+                        "Нет остатка: " + warning.productName(),
+                        warning.sku() + " · склад " + warning.warehouseCode(),
+                        "Открыть товар",
+                        warning.actionUrl()
+                ))
+                .forEach(items::add);
+        cellLoads.stream()
+                .filter(cell -> dashboardCellMaxUtilizationPercent(cell) >= 90.0)
+                .limit(4)
+                .map(cell -> new DashboardReport.AttentionItem(
+                        "CELL_OVERLOAD",
+                        "warning",
+                        3,
+                        "Ячейка перегружена: " + cell.cellCode(),
+                        "Объем " + percentText(cell.volumePercent()) + " · вес " + percentText(cell.weightPercent()),
+                        "Открыть",
+                        cell.actionUrl()
+                ))
+                .forEach(items::add);
+        stockWarnings.stream()
+                .filter(warning -> warning.currentStock() > 0)
+                .limit(4)
+                .map(warning -> new DashboardReport.AttentionItem(
+                        "LOW_STOCK",
+                        "warning",
+                        4,
+                        "Ниже минимума: " + warning.productName(),
+                        warning.currentStock() + " из " + warning.minLevel() + " · склад " + warning.warehouseCode(),
+                        "Создать приемку",
+                        "/operations/new?type=INCOME"
+                ))
+                .forEach(items::add);
+        operations.stream()
+                .filter(operation -> openOperationStatuses.contains(operation.getStatus()))
+                .limit(4)
+                .map(operation -> new DashboardReport.AttentionItem(
+                        "OPERATION_DRAFT",
+                        "info",
+                        5,
+                        "Операция ждет завершения: " + operation.getOperationNumber(),
+                        operation.getType().name() + " · " + operation.getStatus().name(),
+                        "Открыть",
+                        "/operations/" + operation.getId()
+                ))
+                .forEach(items::add);
+        ediMessages.stream()
+                .filter(message -> pendingStatuses.contains(message.getStatus()))
+                .limit(4)
+                .map(message -> new DashboardReport.AttentionItem(
+                        "EDI_PENDING",
+                        "info",
+                        6,
+                        "EDI ожидает обработки: " + message.getMessageType(),
+                        messagePartnerName(message) + " · " + message.getStatus().name(),
+                        "Открыть очередь",
+                        "/edi/queue"
+                ))
+                .forEach(items::add);
+        return items.stream()
+                .sorted(Comparator.comparingInt(DashboardReport.AttentionItem::priority))
+                .limit(10)
+                .toList();
+    }
+
+    private DashboardReport.StockWarningItem toStockWarningItem(ProductAlert alert) {
+        return new DashboardReport.StockWarningItem(
+                alert.productName(),
+                alert.sku(),
+                alert.warehouseId(),
+                alert.warehouseCode(),
+                alert.currentStock(),
+                alert.minLevel(),
+                alert.currentStock() == 0 ? "Нет остатка" : "Ниже минимума",
+                "/products"
+        );
+    }
+
+    private DashboardReport.WorkQueueItem toWorkQueueItem(EdiMessage message, String actionLabel) {
+        return new DashboardReport.WorkQueueItem(
+                message.getId(),
+                "EDI",
+                messagePartnerName(message),
+                Objects.requireNonNullElse(message.getDocumentNumber(), "#" + message.getId()),
+                ediPayloadItemCount(message),
+                message.getStatus().name(),
+                message.getMessageType(),
+                null,
+                actionLabel,
+                "/edi/queue?ediStatus=" + message.getStatus().name()
+        );
+    }
+
+    private DashboardReport.WorkQueueItem toWorkQueueItem(Operation operation, String actionLabel) {
+        return new DashboardReport.WorkQueueItem(
+                operation.getId(),
+                "OPERATION",
+                operation.getCounterparty() == null ? "Без контрагента" : operation.getCounterparty().getName(),
+                Objects.requireNonNullElse(operation.getExternalDocumentNumber(), operation.getOperationNumber()),
+                operation.getItems() == null ? 0 : operation.getItems().size(),
+                operation.getStatus().name(),
+                null,
+                operation.getType(),
+                actionLabel,
+                "/operations/" + operation.getId()
+        );
+    }
+
+    private DashboardReport.EdiProblemItem toEdiProblemItem(EdiMessage message) {
+        return new DashboardReport.EdiProblemItem(
+                message.getId(),
+                message.getMessageType(),
+                message.getStatus(),
+                messagePartnerName(message),
+                Objects.requireNonNullElse(message.getErrorMessage(), "Ошибка не детализирована"),
+                "/edi/queue?ediStatus=FAILED"
+        );
+    }
+
+    private DashboardReport.CellLoadItem toDashboardCellLoadItem(StorageCell cell) {
+        return new DashboardReport.CellLoadItem(
+                cell.getId(),
+                cell.getWarehouse() == null ? null : cell.getWarehouse().getCode(),
+                cell.getCode(),
+                round(percent(cell.getCurrentVolumeCm3(), cell.getMaxVolumeCm3())),
+                round(percent(cell.getCurrentWeightKg(), cell.getMaxWeightKg())),
+                "/storage-cells"
+        );
+    }
+
+    private DashboardReport.RecentOperationItem toRecentOperationItem(Operation operation) {
+        String username = operation.getCompletedBy() != null
+                ? operation.getCompletedBy().getUsername()
+                : operation.getCreatedBy().getUsername();
+        return new DashboardReport.RecentOperationItem(
+                operation.getId(),
+                operationTimestamp(operation),
+                operation.getType(),
+                operation.getStatus(),
+                operation.getOperationNumber(),
+                operation.getWarehouse() == null ? null : operation.getWarehouse().getCode(),
+                username,
+                "/operations/" + operation.getId()
+        );
+    }
+
+    private boolean matchesWarehouse(Operation operation, Long warehouseId) {
+        return warehouseId == null
+                || (operation.getWarehouse() != null && Objects.equals(operation.getWarehouse().getId(), warehouseId));
+    }
+
+    private boolean matchesWarehouse(EdiMessage message, Long warehouseId) {
+        if (warehouseId == null) {
+            return true;
+        }
+        if (message.getRelatedOperation() != null && message.getRelatedOperation().getWarehouse() != null) {
+            return Objects.equals(message.getRelatedOperation().getWarehouse().getId(), warehouseId);
+        }
+        Long payloadWarehouseId = payloadWarehouseId(message);
+        return payloadWarehouseId == null || Objects.equals(payloadWarehouseId, warehouseId);
+    }
+
+    private LocalDateTime operationTimestamp(Operation operation) {
+        return operation.getCompletedAt() != null ? operation.getCompletedAt() : operation.getCreatedAt();
+    }
+
+    private boolean isBetween(LocalDateTime value, LocalDateTime start, LocalDateTime end) {
+        return value != null && !value.isBefore(start) && value.isBefore(end);
+    }
+
+    private double average(List<Double> values) {
+        return round(values.stream()
+                .filter(Objects::nonNull)
+                .mapToDouble(Double::doubleValue)
+                .average()
+                .orElse(0.0));
+    }
+
+    private double dashboardCellMaxUtilizationPercent(DashboardReport.CellLoadItem item) {
+        return Math.max(item.volumePercent() == null ? 0.0 : item.volumePercent(), item.weightPercent() == null ? 0.0 : item.weightPercent());
+    }
+
+    private double percent(BigDecimal current, BigDecimal max) {
+        if (current == null || max == null || BigDecimal.ZERO.compareTo(max) == 0) {
+            return 0.0;
+        }
+        return current.multiply(BigDecimal.valueOf(100))
+                .divide(max, 2, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    private String percentText(Double value) {
+        return (value == null ? 0 : value) + "%";
+    }
+
+    private String messagePartnerName(EdiMessage message) {
+        if (message.getPartner() == null) {
+            return "Без партнера";
+        }
+        return Objects.requireNonNullElse(message.getPartner().getName(), message.getPartner().getCode());
+    }
+
+    private int ediPayloadItemCount(EdiMessage message) {
+        try {
+            if (message.getNormalizedPayload() == null) {
+                return 0;
+            }
+            JsonNode items = objectMapper.readTree(message.getNormalizedPayload()).path("items");
+            return items.isArray() ? items.size() : 0;
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
+    private Long payloadWarehouseId(EdiMessage message) {
+        try {
+            if (message.getNormalizedPayload() == null) {
+                return null;
+            }
+            JsonNode node = objectMapper.readTree(message.getNormalizedPayload()).path("warehouseId");
+            return node.isIntegralNumber() ? node.asLong() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public List<ProductAlert> findLowStockAlerts() {
@@ -334,6 +862,77 @@ public class ReportService {
         return item.currentVolume().multiply(BigDecimal.valueOf(100))
                 .divide(item.maxVolume(), 2, RoundingMode.HALF_UP)
                 .doubleValue();
+    }
+
+    private double cellWeightUtilizationPercent(CellUtilizationReport.CellUtilizationItem item) {
+        if (item.maxWeight() == null || BigDecimal.ZERO.compareTo(item.maxWeight()) == 0) {
+            return 0.0;
+        }
+        return item.currentWeight().multiply(BigDecimal.valueOf(100))
+                .divide(item.maxWeight(), 2, RoundingMode.HALF_UP)
+                .doubleValue();
+    }
+
+    private double cellMaxUtilizationPercent(CellUtilizationReport.CellUtilizationItem item) {
+        return Math.max(cellVolumeUtilizationPercent(item), cellWeightUtilizationPercent(item));
+    }
+
+    private DashboardReport.CellLoadItem toCellLoadItem(CellUtilizationReport.CellUtilizationItem item) {
+        return new DashboardReport.CellLoadItem(
+                item.cellCode(),
+                round(cellVolumeUtilizationPercent(item)),
+                round(cellWeightUtilizationPercent(item)),
+                "/storage-cells"
+        );
+    }
+
+    private DashboardReport.OperationActionItem toOperationActionItem(Operation operation) {
+        return new DashboardReport.OperationActionItem(
+                operation.getId(),
+                operation.getOperationNumber(),
+                operation.getType(),
+                operation.getStatus(),
+                operation.getWarehouse() == null ? null : operation.getWarehouse().getCode(),
+                operation.getCounterparty() == null ? null : operation.getCounterparty().getName(),
+                operation.getItems() == null ? 0 : operation.getItems().size(),
+                operation.getItems() == null ? 0 : Math.toIntExact(operation.getItems().stream().mapToLong(OperationItem::getQuantity).sum()),
+                operation.getCreatedAt(),
+                "/operations/" + operation.getId()
+        );
+    }
+
+    private DashboardReport.EdiActionItem toEdiActionItem(EdiMessage message) {
+        return new DashboardReport.EdiActionItem(
+                message.getId(),
+                message.getMessageType(),
+                message.getStatus(),
+                message.getDocumentNumber(),
+                message.getPartner() == null ? null : message.getPartner().getCode(),
+                message.getErrorMessage(),
+                message.getReceivedAt(),
+                "/edi/queue?ediStatus=" + message.getStatus().name()
+        );
+    }
+
+    private DashboardReport.ActivityItem toActivityItem(AuditLog log) {
+        return new DashboardReport.ActivityItem(
+                log.getEntityName(),
+                log.getEntityId(),
+                log.getAction(),
+                log.getUsername(),
+                log.getOccurredAt(),
+                activityUrl(log)
+        );
+    }
+
+    private String activityUrl(AuditLog log) {
+        if ("Operation".equals(log.getEntityName())) {
+            return "/operations/" + log.getEntityId();
+        }
+        if ("EdiMessage".equals(log.getEntityName())) {
+            return "/edi/messages";
+        }
+        return "/reports";
     }
 
     private double round(double value) {
