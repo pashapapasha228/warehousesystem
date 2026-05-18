@@ -193,6 +193,15 @@ export type StockBalance = {
   updatedAt?: string;
 };
 
+export type LowStockAlert = {
+  productName: string;
+  sku: string;
+  warehouseId: number;
+  warehouseCode: string;
+  currentStock: number;
+  minLevel: number;
+};
+
 export type EdiPartner = {
   id: number;
   code: string;

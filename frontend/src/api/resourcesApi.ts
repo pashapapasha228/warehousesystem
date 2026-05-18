@@ -7,6 +7,7 @@ import type {
   EdiPartner,
   EdiQueueItem,
   DocumentExecutionStep,
+  LowStockAlert,
   Operation,
   OperationVerification,
   PageParams,
@@ -100,7 +101,7 @@ export const usersApi = {
 
 export const reportsApi = {
   dashboard: (params?: { warehouseId?: number; periodDays?: number }) => http.get<DashboardReport>('/reports/dashboard', { params }).then((r) => r.data),
-  lowStock: () => http.get('/reports/low-stock').then((r) => r.data),
+  lowStock: () => http.get<LowStockAlert[]>('/reports/low-stock').then((r) => r.data),
   stockBalance: () => http.get('/reports/stock-balance').then((r) => r.data),
   turnover: (params: Record<string, string>) => http.get('/reports/turnover', { params }).then((r) => r.data),
   movement: (params: Record<string, string>) => http.get('/reports/movement', { params }).then((r) => r.data),
