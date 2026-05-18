@@ -5,7 +5,6 @@ import {
   FilterAltOff,
   Inventory2,
   LocalShipping,
-  PlayArrow,
   Scale,
   SyncAlt,
   Warehouse,
@@ -17,13 +16,9 @@ import {
   Card,
   CardContent,
   Chip,
-  FormControl,
   Grid2 as Grid,
-  InputLabel,
   LinearProgress,
-  MenuItem,
   Paper,
-  Select,
   Skeleton,
   Stack,
   Tab,
@@ -33,10 +28,10 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TableSortLabel,
   Tabs,
   TextField,
   Typography,
-  type SelectChangeEvent,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -65,14 +60,13 @@ import type {
   OperationItem,
   StockBalance,
 } from '../types/api';
-import type { EdiMessageStatus, OperationStatus, OperationType } from '../types/enums';
+import type { EdiMessageStatus, OperationSource, OperationStatus, OperationType } from '../types/enums';
 import { canUseReports } from '../utils/permissions';
 import { fillPercent, fmtDate, isoDateTimeLocal, n, toBackendDateTime } from '../utils/format';
 
 type ReportType =
   | 'summary'
   | 'movement'
-  | 'low-stock'
   | 'cells'
   | 'operations'
   | 'edi'
@@ -80,7 +74,6 @@ type ReportType =
   | 'abc';
 
 type Filters = {
-  warehouseId: number | '';
   start: string;
   end: string;
   report: ReportType;
@@ -93,7 +86,6 @@ type ChartDatum = Record<string, string | number>;
 const reportOptions: Array<{ value: ReportType; label: string; description: string }> = [
   { value: 'summary', label: 'Сводка по складу', description: 'SKU, остатки, резервы и загрузка' },
   { value: 'movement', label: 'Движение товаров', description: 'Приход, расход и перемещения за период' },
-  { value: 'low-stock', label: 'Остатки ниже минимума', description: 'Только проблемные позиции по минимумам' },
   { value: 'cells', label: 'Загрузка ячеек', description: 'Топ загруженных ячеек и средняя загрузка' },
   { value: 'operations', label: 'Операции', description: 'Складские документы и статусы' },
   { value: 'edi', label: 'EDI-обмен', description: 'Сообщения, очередь, ошибки и партнеры' },
@@ -112,6 +104,12 @@ const operationStatusLabels: Record<OperationStatus, string> = {
   SHIPPED: 'Отгружено',
   COMPLETED: 'Завершена',
   CANCELLED: 'Отменена',
+};
+
+const operationSourceLabels: Record<OperationSource | 'UNKNOWN', string> = {
+  MANUAL: 'Вручную',
+  EDI: 'Через EDI',
+  UNKNOWN: 'Не указан',
 };
 
 const ediStatusLabels: Record<EdiMessageStatus, string> = {
@@ -142,9 +140,8 @@ const initialStart = new Date(initialNow.getTime() - 30 * 86400_000);
 
 export function ReportsPage() {
   const { user } = useAuth();
-  const { warehouseId: contextWarehouseId, setWarehouseId, warehouses } = useWarehouseContext();
+  const { warehouseId: contextWarehouseId } = useWarehouseContext();
   const [filters, setFilters] = useState<Filters>({
-    warehouseId: contextWarehouseId ?? '',
     start: isoDateTimeLocal(initialStart),
     end: isoDateTimeLocal(initialNow),
     report: 'summary',
@@ -156,7 +153,7 @@ export function ReportsPage() {
     start: toBackendDateTime(appliedFilters.start),
     end: toBackendDateTime(appliedFilters.end),
   };
-  const selectedWarehouseId = appliedFilters.warehouseId === '' ? undefined : Number(appliedFilters.warehouseId);
+  const selectedWarehouseId = contextWarehouseId ?? undefined;
 
   const dashboardQuery = useQuery({
     queryKey: ['reports-dashboard', selectedWarehouseId, periodDays],
@@ -273,33 +270,9 @@ export function ReportsPage() {
     ],
   );
 
-  const applyFilters = () => {
-    setAppliedFilters(filters);
-    setWarehouseId(filters.warehouseId === '' ? null : Number(filters.warehouseId));
-  };
-
-  const resetFilters = () => {
-    const now = new Date();
-    const next: Filters = {
-      warehouseId: '',
-      start: isoDateTimeLocal(new Date(now.getTime() - 30 * 86400_000)),
-      end: isoDateTimeLocal(now),
-      report: 'summary',
-    };
-    setFilters(next);
-    setAppliedFilters(next);
-    setWarehouseId(null);
-  };
-
   const handleReportChange = (_: React.SyntheticEvent, value: ReportType) => {
     setFilters((current) => ({ ...current, report: value }));
     setAppliedFilters((current) => ({ ...current, report: value }));
-  };
-
-  const handleReportSelect = (event: SelectChangeEvent<ReportType>) => {
-    const report = event.target.value as ReportType;
-    setFilters((current) => ({ ...current, report }));
-    setAppliedFilters((current) => ({ ...current, report }));
   };
 
   return (
@@ -317,8 +290,6 @@ export function ReportsPage() {
           <Typography color="text.secondary">Аналитика по остаткам, операциям, ячейкам и EDI-обмену</Typography>
         </Box>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-          <Button variant="contained" startIcon={<PlayArrow />} onClick={applyFilters}>Сформировать</Button>
-          <Button variant="outlined" startIcon={<FilterAltOff />} onClick={resetFilters}>Сбросить фильтры</Button>
           <Button
             variant="outlined"
             startIcon={<Download />}
@@ -333,58 +304,41 @@ export function ReportsPage() {
       <Card sx={{ borderRadius: 1.5 }}>
         <CardContent>
           <Grid container spacing={2} alignItems="center">
-            <Grid size={{ xs: 12, md: 3 }}>
-              <FormControl size="small" fullWidth>
-                <InputLabel>Склад</InputLabel>
-                <Select
-                  label="Склад"
-                  value={filters.warehouseId}
-                  onChange={(event) => setFilters((current) => ({ ...current, warehouseId: event.target.value === '' ? '' : Number(event.target.value) }))}
-                >
-                  <MenuItem value="">Все склады</MenuItem>
-                  {warehouses.map((warehouse) => (
-                    <MenuItem key={warehouse.id} value={warehouse.id}>{warehouse.code} - {warehouse.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 2.5 }}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <TextField
                 fullWidth
                 size="small"
                 label="Начало периода"
                 type="datetime-local"
                 value={filters.start}
-                onChange={(event) => setFilters((current) => ({ ...current, start: event.target.value }))}
+                onChange={(event) => {
+                  const start = event.target.value;
+                  setFilters((current) => ({ ...current, start }));
+                  setAppliedFilters((current) => ({ ...current, start }));
+                }}
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 2.5 }}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <TextField
                 fullWidth
                 size="small"
                 label="Конец периода"
                 type="datetime-local"
                 value={filters.end}
-                onChange={(event) => setFilters((current) => ({ ...current, end: event.target.value }))}
+                onChange={(event) => {
+                  const end = event.target.value;
+                  setFilters((current) => ({ ...current, end }));
+                  setAppliedFilters((current) => ({ ...current, end }));
+                }}
                 InputLabelProps={{ shrink: true }}
               />
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <FormControl size="small" fullWidth>
-                <InputLabel>Тип отчета</InputLabel>
-                <Select label="Тип отчета" value={filters.report} onChange={handleReportSelect}>
-                  {reportOptions.map((option) => (
-                    <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
             </Grid>
           </Grid>
         </CardContent>
       </Card>
 
-      {!enabled && appliedFilters.report !== 'summary' && appliedFilters.report !== 'low-stock' && (
+      {!enabled && appliedFilters.report !== 'summary' && (
         <Alert severity="info">Расширенные аналитические отчеты доступны ролям ADMIN и MANAGER.</Alert>
       )}
 
@@ -401,11 +355,6 @@ export function ReportsPage() {
           ))}
         </Tabs>
       </Card>
-
-      <ReportPickerCards active={appliedFilters.report} onSelect={(report) => {
-        setFilters((current) => ({ ...current, report }));
-        setAppliedFilters((current) => ({ ...current, report }));
-      }} />
 
       {Boolean(reportError) && <Alert severity="error">Не удалось загрузить отчет: {getErrorMessage(reportError)}</Alert>}
       {reportLoading && <ReportSkeleton />}
@@ -427,37 +376,6 @@ export function ReportsPage() {
         />
       )}
     </Stack>
-  );
-}
-
-function ReportPickerCards({ active, onSelect }: { active: ReportType; onSelect: (report: ReportType) => void }) {
-  return (
-    <Grid container spacing={1.5}>
-      {reportOptions.map((option) => (
-        <Grid key={option.value} size={{ xs: 12, sm: 6, lg: 3 }}>
-          <Card
-            variant={active === option.value ? 'elevation' : 'outlined'}
-            sx={{
-              height: '100%',
-              borderRadius: 1.5,
-              borderColor: active === option.value ? 'primary.main' : 'divider',
-              boxShadow: active === option.value ? 3 : 0,
-            }}
-          >
-            <CardContent
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelect(option.value)}
-              onKeyDown={(event) => event.key === 'Enter' && onSelect(option.value)}
-              sx={{ cursor: 'pointer', height: '100%' }}
-            >
-              <Typography fontWeight={800}>{option.label}</Typography>
-              <Typography variant="body2" color="text.secondary">{option.description}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      ))}
-    </Grid>
   );
 }
 
@@ -490,13 +408,12 @@ function ReportContent({
   backendAbc?: ABCAnalysisReport;
   backendSuppliers?: SupplierStatsReport;
 }) {
-  if (!enabled && report !== 'summary' && report !== 'low-stock') {
+  if (!enabled && report !== 'summary') {
     return <Alert severity="warning">Недостаточно прав для просмотра выбранного отчета.</Alert>;
   }
 
   if (report === 'summary') return <SummaryReport dashboard={dashboard} stockRows={stockRows} lowStockRows={lowStockRows} cellRows={cellRows} preferDashboardCells={hasWarehouseFilter} />;
   if (report === 'movement') return <MovementReportView operations={operations} />;
-  if (report === 'low-stock') return <LowStockReport rows={lowStockRows} stockRows={stockRows} />;
   if (report === 'cells') return <CellsReport dashboard={dashboard} cellRows={cellRows} preferDashboardCells={hasWarehouseFilter} />;
   if (report === 'operations') return <OperationsReport operations={operations} counterparties={counterparties} />;
   if (report === 'edi') return <EdiReport messages={ediMessages} queue={ediQueue} counterparties={counterparties} />;
@@ -571,15 +488,18 @@ function MovementReportView({ operations }: { operations: Operation[] }) {
   const incomeQty = quantityByType(completed, 'INCOME');
   const outcomeQty = quantityByType(completed, 'OUTCOME');
   const moveQty = quantityByType(completed, 'MOVE');
+  const manualOperations = completed.filter((operation) => operationSource(operation) === 'MANUAL').length;
+  const ediOperations = completed.filter((operation) => operationSource(operation) === 'EDI').length;
 
   return (
     <Stack spacing={2}>
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}><KpiCard title="Приход" value={n(incomeQty)} caption="Единиц товара" icon={<Inventory2 />} tone="success" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}><KpiCard title="Расход" value={n(outcomeQty)} caption="Единиц товара" icon={<LocalShipping />} tone="warning" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}><KpiCard title="Перемещения" value={n(moveQty)} caption="Единиц перемещено" icon={<SyncAlt />} tone="primary" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}><KpiCard title="Операций" value={completed.length} caption="Завершенные за период" icon={<Assessment />} tone="primary" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}><KpiCard title="Товаров в операциях" value={new Set(movementRows.map((row) => row.productSku)).size} caption="Уникальные SKU" icon={<BarChartIcon />} tone="neutral" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Приход" value={n(incomeQty)} caption="Единиц товара" icon={<Inventory2 />} tone="success" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Расход" value={n(outcomeQty)} caption="Единиц товара" icon={<LocalShipping />} tone="warning" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Перемещения" value={n(moveQty)} caption="Единиц перемещено" icon={<SyncAlt />} tone="primary" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Операций" value={completed.length} caption="Завершенные за период" icon={<Assessment />} tone="primary" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Вручную" value={manualOperations} caption="Завершенные операции MANUAL" icon={<BarChartIcon />} tone="neutral" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Через EDI" value={ediOperations} caption="Завершенные операции EDI" icon={<SyncAlt />} tone="primary" /></Grid>
       </Grid>
       <SectionCard title="INCOME / OUTCOME / MOVE по дням">
         <BarPanel
@@ -603,6 +523,7 @@ function MovementReportView({ operations }: { operations: Operation[] }) {
             { label: 'Товар', render: (row) => <ProductCell sku={row.productSku} name={row.productName} /> },
             { label: 'Склад', render: (row) => row.warehouseCode || '-' },
             { label: 'Количество', align: 'right', render: (row) => n(row.quantity) },
+            { label: 'Источник', render: (row) => <SourceChip source={row.source} /> },
             { label: 'Пользователь', render: (row) => row.user },
             { label: 'Статус', render: (row) => <StatusChip status={row.status} /> },
           ]}
@@ -692,16 +613,19 @@ function OperationsReport({ operations, counterparties }: { operations: Operatio
   const counterpartyMap = buildCounterpartyMap(counterparties);
   const typeCounts = countBy(operations, (operation) => operation.type);
   const statusCounts = countBy(operations, (operation) => operation.status);
+  const sourceCounts = countBy(operations, (operation) => operationSource(operation));
 
   return (
     <Stack spacing={2}>
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="INCOME" value={typeCounts.INCOME ?? 0} caption="Приемки" icon={<Inventory2 />} tone="success" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="OUTCOME" value={typeCounts.OUTCOME ?? 0} caption="Отгрузки" icon={<LocalShipping />} tone="warning" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="MOVE" value={typeCounts.MOVE ?? 0} caption="Перемещения" icon={<SyncAlt />} tone="primary" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Завершенные" value={statusCounts.COMPLETED ?? 0} caption="Статус COMPLETED" icon={<Assessment />} tone="success" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Черновики" value={statusCounts.DRAFT ?? 0} caption="Статус DRAFT" icon={<BarChartIcon />} tone="warning" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Отмененные" value={statusCounts.CANCELLED ?? 0} caption="Ошибочные или отмененные" icon={<FilterAltOff />} tone={statusCounts.CANCELLED ? 'error' : 'neutral'} /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="INCOME" value={typeCounts.INCOME ?? 0} caption="Приемки: вручную и через EDI" icon={<Inventory2 />} tone="success" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="OUTCOME" value={typeCounts.OUTCOME ?? 0} caption="Отгрузки: вручную и через EDI" icon={<LocalShipping />} tone="warning" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="MOVE" value={typeCounts.MOVE ?? 0} caption="Перемещения" icon={<SyncAlt />} tone="primary" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Через EDI" value={sourceCounts.EDI ?? 0} caption="Операции, оформленные EDI" icon={<SyncAlt />} tone="primary" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Вручную" value={sourceCounts.MANUAL ?? 0} caption="Операции MANUAL" icon={<BarChartIcon />} tone="neutral" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Завершенные" value={statusCounts.COMPLETED ?? 0} caption="Статус COMPLETED" icon={<Assessment />} tone="success" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Черновики" value={statusCounts.DRAFT ?? 0} caption="Статус DRAFT" icon={<BarChartIcon />} tone="warning" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Отмененные" value={statusCounts.CANCELLED ?? 0} caption="Ошибочные или отмененные" icon={<FilterAltOff />} tone={statusCounts.CANCELLED ? 'error' : 'neutral'} /></Grid>
       </Grid>
       <SectionCard title="Складские операции">
         <LimitedTable
@@ -713,6 +637,7 @@ function OperationsReport({ operations, counterparties }: { operations: Operatio
             { label: 'Тип', render: (row) => operationTypeLabels[row.type] },
             { label: 'Склад', render: (row) => row.warehouseCode || '-' },
             { label: 'Контрагент', render: (row) => row.counterpartyId ? counterpartyMap.get(row.counterpartyId)?.name ?? `#${row.counterpartyId}` : '-' },
+            { label: 'Источник', render: (row) => <SourceChip source={operationSource(row)} /> },
             { label: 'Статус', render: (row) => <StatusChip status={row.status} /> },
             { label: 'Позиций', align: 'right', render: (row) => row.items.length },
             { label: 'Дата создания', render: (row) => fmtDate(row.createdAt) },
@@ -805,6 +730,8 @@ function SuppliersReport({
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Всего поставщиков" value={supplierRows.length} caption="Контрагенты типа SUPPLIER/BOTH" icon={<Warehouse />} tone="primary" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Активных" value={activeSuppliers.length} caption="Были поставки или DESADV" icon={<Assessment />} tone="success" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Поставок" value={sum(supplierRows, (row) => row.deliveryCount)} caption="Завершенные INCOME" icon={<Inventory2 />} tone="success" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Вручную" value={sum(supplierRows, (row) => row.manualDeliveries)} caption="Приемки MANUAL" icon={<BarChartIcon />} tone="neutral" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Через EDI" value={sum(supplierRows, (row) => row.ediDeliveries)} caption="Приемки EDI" icon={<SyncAlt />} tone="primary" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Принято товаров" value={n(sum(supplierRows, (row) => row.acceptedQuantity))} caption="Количество по приемкам" icon={<LocalShipping />} tone="primary" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="DESADV" value={sum(supplierRows, (row) => row.desadvCount)} caption="Входящие от поставщиков" icon={<SyncAlt />} tone="neutral" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="EDI-ошибки" value={sum(supplierRows, (row) => row.ediErrors)} caption="Ошибки по поставщикам" icon={<FilterAltOff />} tone={sum(supplierRows, (row) => row.ediErrors) ? 'error' : 'neutral'} /></Grid>
@@ -820,6 +747,8 @@ function SuppliersReport({
           columns={[
             { label: 'Поставщик', render: (row) => row.supplierName },
             { label: 'Поставок', align: 'right', render: (row) => n(row.deliveryCount) },
+            { label: 'Вручную', align: 'right', render: (row) => n(row.manualDeliveries) },
+            { label: 'Через EDI', align: 'right', render: (row) => n(row.ediDeliveries) },
             { label: 'Позиций', align: 'right', render: (row) => n(row.itemCount) },
             { label: 'Принятое количество', align: 'right', render: (row) => n(row.acceptedQuantity) },
             { label: 'DESADV', align: 'right', render: (row) => n(row.desadvCount) },
@@ -838,7 +767,13 @@ function ABCReport({ operations, backendAbc }: { operations: Operation[]; backen
   const totalValue = sum(abcRows, (row) => row.value);
   const classCounts = countBy(abcRows, (row) => row.abcClass);
   const classDistribution = ['A', 'B', 'C'].map((name) => ({ name, value: classCounts[name] ?? 0 }));
-  const topProducts = topN(abcRows.map((row) => ({ name: row.productSku, value: row.value })), (row) => row.value, 10);
+  const hasReliableCost = abcRows.some((row) => row.hasReliableCost);
+  const abcValueLabel = hasReliableCost ? 'Стоимость движения' : 'Количество движения';
+  const topProducts = topN(
+    abcRows.map((row) => ({ name: row.productSku, productName: row.productName, value: row.value })),
+    (row) => row.value,
+    10,
+  );
 
   if (abcRows.length === 0) {
     return <Alert severity="info">Недостаточно данных для ABC-анализа за выбранный период.</Alert>;
@@ -861,24 +796,25 @@ function ABCReport({ operations, backendAbc }: { operations: Operation[]; backen
           </SectionCard>
         </Grid>
         <Grid size={{ xs: 12, lg: 7 }}>
-          <SectionCard title="Топ-10 товаров по движению">
-            <BarPanel data={topProducts} bars={[{ key: 'value', name: 'Движение товара', color: '#1976d2' }]} emptyText="Нет данных для графика." />
+          <SectionCard title="Топ-10 товаров по движению" subtitle={`Цифровое значение на графике: ${abcValueLabel.toLowerCase()} за выбранный период.`}>
+            <BarPanel data={topProducts} bars={[{ key: 'value', name: abcValueLabel, color: '#1976d2' }]} emptyText="Нет данных для графика." />
           </SectionCard>
         </Grid>
       </Grid>
       <SectionCard title="Таблица ABC-анализа" subtitle="A - первые примерно 80% накопленной доли, B - следующие 15%, C - оставшиеся позиции.">
-        <LimitedTable
+        <SortableLimitedTable
           rows={abcRows}
           getKey={(row) => row.productSku}
           emptyText="Недостаточно данных для ABC-анализа за выбранный период."
+          initialSort={{ key: 'value', direction: 'desc' }}
           columns={[
-            { label: 'SKU', render: (row) => row.productSku },
-            { label: 'Товар', render: (row) => row.productName },
-            { label: 'Количество движения', align: 'right', render: (row) => n(row.movementQuantity) },
-            { label: 'Стоимость движения', align: 'right', render: (row) => row.hasReliableCost ? n(row.value) : '-' },
-            { label: 'Доля, %', align: 'right', render: (row) => `${n(row.sharePercent)}%` },
-            { label: 'Накопленная доля, %', align: 'right', render: (row) => `${n(row.cumulativePercent)}%` },
-            { label: 'Класс ABC', render: (row) => <Chip size="small" label={row.abcClass} sx={{ bgcolor: abcColors[row.abcClass], color: 'common.white', fontWeight: 800 }} /> },
+            { key: 'productSku', label: 'SKU', render: (row) => row.productSku, sortValue: (row) => row.productSku },
+            { key: 'productName', label: 'Товар', render: (row) => row.productName, sortValue: (row) => row.productName },
+            { key: 'movementQuantity', label: 'Количество движения', align: 'right', render: (row) => n(row.movementQuantity), sortValue: (row) => row.movementQuantity },
+            { key: 'value', label: 'Стоимость движения', align: 'right', render: (row) => row.hasReliableCost ? n(row.value) : '-', sortValue: (row) => row.value },
+            { key: 'sharePercent', label: 'Доля, %', align: 'right', render: (row) => `${n(row.sharePercent)}%`, sortValue: (row) => row.sharePercent },
+            { key: 'cumulativePercent', label: 'Накопленная доля, %', align: 'right', render: (row) => `${n(row.cumulativePercent)}%`, sortValue: (row) => row.cumulativePercent },
+            { key: 'abcClass', label: 'Класс ABC', render: (row) => <Chip size="small" label={row.abcClass} sx={{ bgcolor: abcColors[row.abcClass], color: 'common.white', fontWeight: 800 }} />, sortValue: (row) => row.abcClass },
           ]}
         />
       </SectionCard>
@@ -958,7 +894,7 @@ function BarPanel({
           <CartesianGrid strokeDasharray="3 3" vertical={false} />
           <XAxis dataKey="name" interval={0} angle={-35} textAnchor="end" height={84} tick={{ fontSize: 11 }} />
           <YAxis domain={yDomain} tickFormatter={(value) => `${value}${valueSuffix}`} />
-          <Tooltip formatter={(value) => `${n(Number(value))}${valueSuffix}`} />
+          <Tooltip content={<ChartTooltip valueSuffix={valueSuffix} />} />
           <Legend />
           {bars.map((bar) => (
             <Bar key={bar.key} dataKey={bar.key} name={bar.name} fill={bar.color} radius={[3, 3, 0, 0]} />
@@ -966,6 +902,45 @@ function BarPanel({
         </BarChart>
       </ResponsiveContainer>
     </Box>
+  );
+}
+
+function ChartTooltip({
+  active,
+  payload,
+  label,
+  valueSuffix,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number | string; payload?: ChartDatum }>;
+  label?: string | number;
+  valueSuffix: string;
+}) {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const row = payload[0]?.payload;
+  const productName = typeof row?.productName === 'string' ? row.productName : undefined;
+
+  return (
+    <Paper variant="outlined" sx={{ p: 1.25, maxWidth: 300 }}>
+      {productName ? (
+        <>
+          <Typography fontWeight={800}>{productName}</Typography>
+          <Typography variant="caption" color="text.secondary">{label}</Typography>
+        </>
+      ) : (
+        <Typography fontWeight={800}>{label}</Typography>
+      )}
+      <Stack spacing={0.5} mt={0.75}>
+        {payload.map((item) => (
+          <Typography key={item.name} variant="body2">
+            {item.name}: {n(item.value)}{valueSuffix}
+          </Typography>
+        ))}
+      </Stack>
+    </Paper>
   );
 }
 
@@ -1043,6 +1018,101 @@ function LimitedTable<T>({
   );
 }
 
+type SortDirection = 'asc' | 'desc';
+
+type SortableColumn<T> = {
+  key: string;
+  label: string;
+  align?: 'right';
+  render: (row: T) => ReactNode;
+  sortValue: (row: T) => string | number;
+};
+
+function SortableLimitedTable<T>({
+  rows,
+  columns,
+  getKey,
+  emptyText,
+  initialLimit = 10,
+  initialSort,
+}: {
+  rows: T[];
+  columns: Array<SortableColumn<T>>;
+  getKey: (row: T, index: number) => React.Key;
+  emptyText: string;
+  initialLimit?: number;
+  initialSort: { key: string; direction: SortDirection };
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const [sort, setSort] = useState(initialSort);
+  const sortedRows = useMemo(() => {
+    const column = columns.find((item) => item.key === sort.key);
+    if (!column) return rows;
+    return [...rows].sort((left, right) => compareSortValues(column.sortValue(left), column.sortValue(right), sort.direction));
+  }, [columns, rows, sort.direction, sort.key]);
+  const visibleRows = showAll ? sortedRows : sortedRows.slice(0, initialLimit);
+
+  const changeSort = (key: string) => {
+    setSort((current) => ({
+      key,
+      direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc',
+    }));
+  };
+
+  return (
+    <Stack spacing={1.5}>
+      <TableContainer component={Paper} variant="outlined">
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              {columns.map((column) => (
+                <TableCell key={column.key} align={column.align} sortDirection={sort.key === column.key ? sort.direction : false}>
+                  <TableSortLabel
+                    active={sort.key === column.key}
+                    direction={sort.key === column.key ? sort.direction : 'asc'}
+                    onClick={() => changeSort(column.key)}
+                  >
+                    {column.label}
+                  </TableSortLabel>
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {visibleRows.map((row, index) => (
+              <TableRow key={getKey(row, index)} hover>
+                {columns.map((column) => (
+                  <TableCell key={column.key} align={column.align}>{column.render(row)}</TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {rows.length === 0 && (
+          <Box py={4} textAlign="center">
+            <Typography color="text.secondary">{emptyText}</Typography>
+          </Box>
+        )}
+      </TableContainer>
+      {rows.length > initialLimit && (
+        <Box>
+          <Button size="small" variant="outlined" onClick={() => setShowAll((value) => !value)}>
+            {showAll ? 'Скрыть' : `Показать все (${rows.length})`}
+          </Button>
+        </Box>
+      )}
+    </Stack>
+  );
+}
+
+function compareSortValues(left: string | number, right: string | number, direction: SortDirection) {
+  const multiplier = direction === 'asc' ? 1 : -1;
+  if (typeof left === 'number' && typeof right === 'number') {
+    return (left - right) * multiplier;
+  }
+  return String(left).localeCompare(String(right), 'ru', { numeric: true, sensitivity: 'base' }) * multiplier;
+}
+
 function ProductCell({ sku, name }: { sku: string; name: string }) {
   return (
     <Box>
@@ -1055,6 +1125,17 @@ function ProductCell({ sku, name }: { sku: string; name: string }) {
 function StatusChip({ status }: { status: string }) {
   const label = status in operationStatusLabels ? operationStatusLabels[status as OperationStatus] : status;
   return <Chip size="small" color={operationStatusColors[status] ?? 'default'} label={label} />;
+}
+
+function SourceChip({ source }: { source: OperationSource | 'UNKNOWN' }) {
+  return (
+    <Chip
+      size="small"
+      color={source === 'EDI' ? 'info' : source === 'MANUAL' ? 'default' : 'warning'}
+      label={operationSourceLabels[source]}
+      variant={source === 'EDI' ? 'filled' : 'outlined'}
+    />
+  );
 }
 
 function EdiStatusChip({ status }: { status: EdiMessageStatus }) {
@@ -1142,6 +1223,7 @@ function operationToMovementRows(operation: Operation) {
     productName: item.productName ?? 'Товар без названия',
     warehouseCode: operation.warehouseCode,
     quantity: item.quantity,
+    source: operationSource(operation),
     user: operation.completedByUserId ? `#${operation.completedByUserId}` : operation.createdByUserId ? `#${operation.createdByUserId}` : '-',
     status: operation.status,
     date: operation.completedAt ?? operation.createdAt,
@@ -1236,6 +1318,8 @@ function buildSupplierRows(
     rows.set(supplier.name, {
       supplierName: supplier.name,
       deliveryCount: 0,
+      manualDeliveries: 0,
+      ediDeliveries: 0,
       itemCount: 0,
       acceptedQuantity: 0,
       desadvCount: 0,
@@ -1251,6 +1335,11 @@ function buildSupplierRows(
       const name = operation.counterpartyId ? byId.get(operation.counterpartyId)?.name ?? `Поставщик #${operation.counterpartyId}` : 'Без поставщика';
       const row = rows.get(name) ?? createSupplierRow(name);
       row.deliveryCount += 1;
+      if (operationSource(operation) === 'EDI') {
+        row.ediDeliveries += 1;
+      } else {
+        row.manualDeliveries += 1;
+      }
       row.itemCount += operation.items.length;
       row.acceptedQuantity += operationQuantity(operation);
       row.lastDelivery = latestDate(row.lastDelivery, operation.completedAt ?? operation.createdAt);
@@ -1284,6 +1373,8 @@ function buildSupplierRows(
 type SupplierReportRow = {
   supplierName: string;
   deliveryCount: number;
+  manualDeliveries: number;
+  ediDeliveries: number;
   itemCount: number;
   acceptedQuantity: number;
   desadvCount: number;
@@ -1296,6 +1387,8 @@ function createSupplierRow(supplierName: string): SupplierReportRow {
   return {
     supplierName,
     deliveryCount: 0,
+    manualDeliveries: 0,
+    ediDeliveries: 0,
     itemCount: 0,
     acceptedQuantity: 0,
     desadvCount: 0,
@@ -1400,9 +1493,6 @@ function getExportRows(
   if (report === 'movement') {
     return data.operations.filter((operation) => operation.status === 'COMPLETED').flatMap(operationToMovementRows);
   }
-  if (report === 'low-stock') {
-    return data.lowStockRows;
-  }
   if (report === 'cells') {
     return buildCellAnalytics(data.cellRows, data.dashboard).cells;
   }
@@ -1445,7 +1535,6 @@ function csvCell(value: unknown) {
 function isReportLoading(report: ReportType, loading: Record<string, boolean>) {
   if (report === 'summary') return loading.dashboard || loading.stock || loading.lowStock;
   if (report === 'movement') return loading.operations;
-  if (report === 'low-stock') return loading.stock || loading.lowStock;
   if (report === 'cells') return loading.dashboard || loading.cells;
   if (report === 'operations') return loading.operations || loading.counterparties;
   if (report === 'edi') return loading.edi || loading.counterparties;
@@ -1456,7 +1545,6 @@ function isReportLoading(report: ReportType, loading: Record<string, boolean>) {
 function getReportError(report: ReportType, errors: Record<string, unknown>) {
   if (report === 'summary') return errors.dashboard ?? errors.stock ?? errors.lowStock;
   if (report === 'movement') return errors.operations;
-  if (report === 'low-stock') return errors.stock ?? errors.lowStock;
   if (report === 'cells') return errors.dashboard ?? errors.cells;
   if (report === 'operations') return errors.operations ?? errors.counterparties;
   if (report === 'edi') return errors.edi ?? errors.counterparties;
@@ -1478,6 +1566,10 @@ function quantityByType(operations: Operation[], type: OperationType) {
 
 function operationQuantity(operation: Operation) {
   return sum(operation.items, (item) => item.quantity);
+}
+
+function operationSource(operation: Operation): OperationSource | 'UNKNOWN' {
+  return operation.source === 'EDI' || operation.source === 'MANUAL' ? operation.source : 'UNKNOWN';
 }
 
 function countBy<T>(rows: T[], getKey: (row: T) => string) {
