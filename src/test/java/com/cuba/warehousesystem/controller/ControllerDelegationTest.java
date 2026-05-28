@@ -143,7 +143,7 @@ class ControllerDelegationTest {
         EdiProcessingService processingService = mock(EdiProcessingService.class);
         EdiController ediController = new EdiController(processingService);
         EdiMessageReceiveRequest receiveRequest = new EdiMessageReceiveRequest(null, "EDI-1", EdiMessageType.DESADV, "INT", "MSG", "DOC", "raw", null);
-        EdiSimulationRequest simulationRequest = new EdiSimulationRequest(1L, 2L, "DOC", List.of(new EdiSimulationRequest.Item(null, 3L, "EXT-1", 1)));
+        EdiSimulationRequest simulationRequest = new EdiSimulationRequest(1L, 2L, "DOC", List.of(new EdiSimulationRequest.Item(null, 3L, "EXT-1", 1, null)));
         EdiCustomerReceiptRequest receiptRequest = new EdiCustomerReceiptRequest(1L, 2L, "DOC");
 
         assertThat(ediController.receiveInbound(receiveRequest).getStatusCode()).isEqualTo(HttpStatus.CREATED);

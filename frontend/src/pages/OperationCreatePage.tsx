@@ -105,7 +105,7 @@ export function OperationCreatePage() {
               <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="Дата документа" type="date" InputLabelProps={{ shrink: true }} {...register('documentDate')} /></Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <Controller control={control} name="source" render={({ field }) => (
-                  <FormControl fullWidth><InputLabel>Источник</InputLabel><Select {...field} label="Источник"><MenuItem value="MANUAL">MANUAL</MenuItem><MenuItem value="EDI">EDI</MenuItem></Select></FormControl>
+                  <FormControl fullWidth><InputLabel>Источник</InputLabel><Select {...field} label="Источник"><MenuItem value="MANUAL">Вручную</MenuItem><MenuItem value="EDI">EDI</MenuItem></Select></FormControl>
                 )} />
               </Grid>
             </Grid>

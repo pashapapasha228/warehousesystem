@@ -43,8 +43,8 @@ export function EdiPartnersPage() {
         { key: 'gln', label: 'GLN' },
         { key: 'counterpartyName', label: 'Контрагент' },
         { key: 'warehouses', label: 'Склады', render: (row) => row.warehouses?.map((warehouse) => warehouse.code).join(', ') || '—', sortKey: false },
-        { key: 'inboundEnabled', label: 'Inbound', render: (r) => <BoolChip value={r.inboundEnabled} /> },
-        { key: 'outboundEnabled', label: 'Outbound', render: (r) => <BoolChip value={r.outboundEnabled} /> },
+        { key: 'inboundEnabled', label: 'Входящие', render: (r) => <BoolChip value={r.inboundEnabled} /> },
+        { key: 'outboundEnabled', label: 'Исходящие', render: (r) => <BoolChip value={r.outboundEnabled} /> },
       ]}
       fields={[
         { name: 'code', label: 'Код', required: true },
@@ -379,28 +379,28 @@ function InboundEdiForm() {
     <Card>
       <CardContent>
         <Stack spacing={2}>
-          <Typography variant="h6">Ручной прием inbound EDI</Typography>
+          <Typography variant="h6">Ручной прием входящего EDI</Typography>
           {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
           {ok && <Alert severity="success" onClose={() => setOk('')}>{ok}</Alert>}
           <Box display="grid" gridTemplateColumns={{ xs: '1fr', md: 'repeat(3, 1fr)' }} gap={2}>
-            <TextField label="partnerId" {...register('partnerId')} />
-            <TextField label="partnerCode" {...register('partnerCode')} />
-            <TextField label="messageType" select defaultValue="DESADV" {...register('messageType')}>{ediMessageTypes.map((v) => <MenuItem key={v} value={v}>{ediMessageTypeLabels[v]}</MenuItem>)}</TextField>
-            <TextField label="interchangeRef" {...register('interchangeRef')} />
-            <TextField label="messageRef" {...register('messageRef')} />
-            <TextField label="documentNumber" {...register('documentNumber')} />
+            <TextField label="ID EDI-партнера" {...register('partnerId')} />
+            <TextField label="Код EDI-партнера" {...register('partnerCode')} />
+            <TextField label="Тип сообщения" select defaultValue="DESADV" {...register('messageType')}>{ediMessageTypes.map((v) => <MenuItem key={v} value={v}>{ediMessageTypeLabels[v]}</MenuItem>)}</TextField>
+            <TextField label="Ссылка обмена" {...register('interchangeRef')} />
+            <TextField label="Ссылка сообщения" {...register('messageRef')} />
+            <TextField label="Номер документа" {...register('documentNumber')} />
           </Box>
-          <TextField label="rawPayload" multiline minRows={3} {...register('rawPayload')} />
-          <Button variant="outlined" onClick={() => setValue('normalizedPayload', inboundPayloadExamples[selectedMessageType])}>Подставить пример payload</Button>
-          <TextField label="normalizedPayload JSON" multiline minRows={5} className="mono" {...register('normalizedPayload')} />
+          <TextField label="Исходное сообщение" multiline minRows={3} {...register('rawPayload')} />
+          <Button variant="outlined" onClick={() => setValue('normalizedPayload', inboundPayloadExamples[selectedMessageType])}>Подставить пример данных</Button>
+          <TextField label="Нормализованные данные JSON" multiline minRows={5} className="mono" {...register('normalizedPayload')} />
           <Button startIcon={<Send />} variant="contained" disabled={mutation.isPending} onClick={handleSubmit((data) => {
             setError('');
             try {
               mutation.mutate({ ...data, partnerId: data.partnerId ? Number(data.partnerId) : null, normalizedPayload: JSON.parse(data.normalizedPayload) });
             } catch {
-              setError('normalizedPayload должен быть корректным JSON.');
+              setError('Нормализованные данные должны быть корректным JSON.');
             }
-          })}>Отправить в backend</Button>
+          })}>Отправить в систему</Button>
         </Stack>
       </CardContent>
     </Card>
@@ -503,7 +503,7 @@ export function EdiQueuePage() {
         { key: 'id', label: 'ID' },
         { key: 'messageType', label: 'Тип' },
         { key: 'messageStatus', label: 'Статус EDI' },
-        { key: 'messageRef', label: 'Ref' },
+        { key: 'messageRef', label: 'Ссылка' },
         { key: 'documentNumber', label: 'Документ' },
         { key: 'partnerCode', label: 'Партнер' },
         { key: 'attemptCount', label: 'Попытки' },

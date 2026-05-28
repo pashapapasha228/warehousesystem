@@ -296,7 +296,7 @@ public class EdiProcessingService {
         for (EdiSimulationRequest.Item item : requestItems) {
             Map<String, Object> payloadItem = new HashMap<>();
             payloadItem.put("quantity", item.quantity());
-            payloadItem.put("unitPrice", BigDecimal.ZERO);
+            payloadItem.put("unitPrice", item.unitPrice() == null ? BigDecimal.ZERO : item.unitPrice());
             if (item.mappingId() != null) {
                 EdiMappingConfig mapping = ediMappingConfigRepository.findById(item.mappingId())
                         .orElseThrow(() -> new EntityNotFoundException("EDI mapping not found"));

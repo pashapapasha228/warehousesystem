@@ -12,6 +12,7 @@ type SimulatorLine = {
   mappingId?: number | '';
   productId?: number | '';
   quantity: number;
+  unitPrice?: number | '';
 };
 
 type SimulatorForm = {
@@ -36,7 +37,7 @@ export function EdiSimulatorPage() {
     defaultValues: {
       actor: 'supplier',
       warehouseId: warehouseId || '',
-      items: [{ source: 'mapping', quantity: 1 }],
+      items: [{ source: 'mapping', quantity: 1, unitPrice: 0 }],
     },
   });
   const receiptForm = useForm<ReceiptForm>({ defaultValues: {} });
@@ -44,11 +45,17 @@ export function EdiSimulatorPage() {
   const actor = watch('actor');
   const partnerId = watch('partnerId');
   const selectedWarehouseId = watch('warehouseId');
+  const selectedPartnerId = Number(partnerId);
+  const hasSelectedPartner = Number.isFinite(selectedPartnerId) && selectedPartnerId > 0;
 
   const partners = useQuery({ queryKey: ['edi-partners-simulator'], queryFn: () => ediApi.partners.list({ page: 0, size: 200, sort: 'code,asc' }) });
   const warehouses = useQuery({ queryKey: ['warehouses-simulator'], queryFn: () => warehousesApi.list({ page: 0, size: 200, sort: 'code,asc' }) });
   const products = useQuery({ queryKey: ['products-simulator'], queryFn: () => productsApi.list({ page: 0, size: 300, sort: 'sku,asc' }) });
-  const mappings = useQuery({ queryKey: ['edi-mappings-simulator'], queryFn: () => ediApi.mappings.list({ page: 0, size: 500, sort: 'externalProductCode,asc' }) });
+  const mappings = useQuery({
+    queryKey: ['edi-mappings-simulator', selectedPartnerId],
+    queryFn: () => ediApi.mappings.list({ page: 0, size: 500, sort: 'externalProductCode,asc', partnerId: selectedPartnerId }),
+    enabled: hasSelectedPartner,
+  });
 
   const mutation = useMutation({
     mutationFn: (data: SimulatorForm) => {
@@ -60,6 +67,7 @@ export function EdiSimulatorPage() {
           mappingId: item.source === 'mapping' && item.mappingId ? Number(item.mappingId) : null,
           productId: item.source === 'productId' && item.productId ? Number(item.productId) : null,
           quantity: Number(item.quantity),
+          unitPrice: Number.isFinite(Number(item.unitPrice)) ? Number(item.unitPrice) : 0,
         })),
       };
       return data.actor === 'supplier' ? ediApi.simulateSupplier(body) : ediApi.simulateCustomer(body);
@@ -87,19 +95,17 @@ export function EdiSimulatorPage() {
     onError: (error) => setNotice(getErrorMessage(error)),
   });
 
-  const partnerMappings = mappings.data?.content.filter((mapping) => (
-    !partnerId || mapping.partnerId === Number(partnerId)
-  )) ?? [];
+  const partnerMappings = mappings.data?.content.filter((mapping) => mapping.isActive !== false) ?? [];
   const partnerOptions = partners.data?.content.filter((partner) => (
     actor === 'supplier'
       ? (partner.counterpartyType === 'SUPPLIER' || partner.counterpartyType === 'BOTH') && partner.outboundEnabled !== false
       : (partner.counterpartyType === 'CUSTOMER' || partner.counterpartyType === 'BOTH') && partner.outboundEnabled !== false
   )) ?? [];
-  const selectedPartner = partnerOptions.find((partner) => partner.id === Number(partnerId));
+  const selectedPartner = partnerOptions.find((partner) => partner.id === selectedPartnerId);
   const warehouseOptions = selectedPartner?.warehouses?.length ? selectedPartner.warehouses : warehouses.data?.content ?? [];
 
   useEffect(() => {
-    const selected = partners.data?.content.find((partner) => partner.id === Number(partnerId));
+    const selected = partners.data?.content.find((partner) => partner.id === selectedPartnerId);
     if (!selected) return;
     const validType = actor === 'supplier'
       ? selected.counterpartyType === 'SUPPLIER' || selected.counterpartyType === 'BOTH'
@@ -108,7 +114,11 @@ export function EdiSimulatorPage() {
       setValue('partnerId', '');
       setValue('warehouseId', '');
     }
-  }, [actor, partnerId, partners.data?.content, setValue]);
+  }, [actor, selectedPartnerId, partners.data?.content, setValue]);
+
+  useEffect(() => {
+    lines.fields.forEach((_, index) => setValue(`items.${index}.mappingId`, ''));
+  }, [lines.fields.length, selectedPartnerId, setValue]);
 
   useEffect(() => {
     if (!selectedPartner?.warehouses?.length) return;
@@ -120,7 +130,7 @@ export function EdiSimulatorPage() {
 
   return (
     <Stack spacing={2}>
-      <Typography variant="h4">External messages</Typography>
+      <Typography variant="h4">Внешние сообщения</Typography>
       {notice && <Alert severity={notice.includes('создано') || notice.includes('принято') ? 'success' : 'error'} onClose={() => setNotice('')}>{notice}</Alert>}
 
       <Card>
@@ -154,13 +164,13 @@ export function EdiSimulatorPage() {
                   <Grid container spacing={2} key={line.id} alignItems="center">
                     <Grid size={{ xs: 12, md: 2 }}>
                       <Controller control={control} name={`items.${index}.source`} render={({ field }) => (
-                        <FormControl fullWidth><InputLabel>Источник</InputLabel><Select {...field} label="Источник"><MenuItem value="mapping">Mapping</MenuItem><MenuItem value="productId">ID товара</MenuItem></Select></FormControl>
+                        <FormControl fullWidth><InputLabel>Источник</InputLabel><Select {...field} label="Источник"><MenuItem value="mapping">По маппингу</MenuItem><MenuItem value="productId">По ID товара</MenuItem></Select></FormControl>
                       )} />
                     </Grid>
                     {source === 'mapping' ? (
                       <Grid size={{ xs: 12, md: 5 }}>
                         <Controller control={control} name={`items.${index}.mappingId`} render={({ field }) => (
-                          <FormControl fullWidth><InputLabel>Mapping</InputLabel><Select {...field} label="Mapping" value={field.value || ''}>{partnerMappings.map((mapping) => <MenuItem key={mapping.id} value={mapping.id}>{mapping.partnerCode} / {mapping.externalProductCode} - {mapping.internalSku} · {mapping.internalProductName}</MenuItem>)}</Select></FormControl>
+                          <FormControl fullWidth disabled={!hasSelectedPartner || mappings.isLoading}><InputLabel>Маппинг товара</InputLabel><Select {...field} label="Маппинг товара" value={field.value || ''}><MenuItem value="">{hasSelectedPartner ? 'Выберите товар из маппинга партнера' : 'Сначала выберите EDI-партнера'}</MenuItem>{partnerMappings.map((mapping) => <MenuItem key={mapping.id} value={mapping.id}>{mapping.partnerCode} / {mapping.externalProductCode} - {mapping.internalSku} · {mapping.internalProductName}</MenuItem>)}</Select></FormControl>
                         )} />
                       </Grid>
                     ) : (
@@ -171,11 +181,12 @@ export function EdiSimulatorPage() {
                       </Grid>
                     )}
                     <Grid size={{ xs: 6, md: 2 }}><TextField fullWidth label="Количество" type="number" {...register(`items.${index}.quantity`, { valueAsNumber: true })} /></Grid>
+                    <Grid size={{ xs: 6, md: 2 }}><TextField fullWidth label="Цена" type="number" inputProps={{ min: 0, step: '0.01' }} {...register(`items.${index}.unitPrice`, { valueAsNumber: true })} /></Grid>
                     <Grid size={{ xs: 12, md: 1 }}><IconButton color="error" onClick={() => lines.remove(index)}><Delete /></IconButton></Grid>
                   </Grid>
                 );
               })}
-              <Button startIcon={<Add />} onClick={() => lines.append({ source: 'mapping', quantity: 1 })}>Добавить товар</Button>
+              <Button startIcon={<Add />} onClick={() => lines.append({ source: 'mapping', quantity: 1, unitPrice: 0 })}>Добавить товар</Button>
             </Stack>
 
             <Button variant="contained" disabled={mutation.isPending} onClick={handleSubmit((data) => mutation.mutate(data))}>Отправить внешнее сообщение</Button>
@@ -188,8 +199,8 @@ export function EdiSimulatorPage() {
           <Stack spacing={2}>
             <Typography variant="h6">Подтверждение приема товара клиентом</Typography>
             <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="ID EDI-сообщения ORDERS" type="number" {...receiptForm.register('messageId', { valueAsNumber: true })} /></Grid>
-              <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="ID операции OUTCOME" type="number" {...receiptForm.register('operationId', { valueAsNumber: true })} /></Grid>
+              <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="ID EDI-сообщения с заказом" type="number" {...receiptForm.register('messageId', { valueAsNumber: true })} /></Grid>
+              <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="ID операции отгрузки" type="number" {...receiptForm.register('operationId', { valueAsNumber: true })} /></Grid>
               <Grid size={{ xs: 12, md: 4 }}><TextField fullWidth label="Номер подтверждения" {...receiptForm.register('documentNumber')} /></Grid>
             </Grid>
             <Button variant="contained" disabled={receiptMutation.isPending} onClick={receiptForm.handleSubmit((data) => receiptMutation.mutate(data))}>Подтвердить прием клиентом</Button>

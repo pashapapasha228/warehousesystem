@@ -498,10 +498,10 @@ function MovementReportView({ operations }: { operations: Operation[] }) {
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Расход" value={n(outcomeQty)} caption="Единиц товара" icon={<LocalShipping />} tone="warning" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Перемещения" value={n(moveQty)} caption="Единиц перемещено" icon={<SyncAlt />} tone="primary" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Операций" value={completed.length} caption="Завершенные за период" icon={<Assessment />} tone="primary" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Вручную" value={manualOperations} caption="Завершенные операции MANUAL" icon={<BarChartIcon />} tone="neutral" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Вручную" value={manualOperations} caption="Завершенные операции вручную" icon={<BarChartIcon />} tone="neutral" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Через EDI" value={ediOperations} caption="Завершенные операции EDI" icon={<SyncAlt />} tone="primary" /></Grid>
       </Grid>
-      <SectionCard title="INCOME / OUTCOME / MOVE по дням">
+      <SectionCard title="Приемки / отгрузки / перемещения по дням">
         <BarPanel
           data={byDay}
           bars={[
@@ -618,13 +618,13 @@ function OperationsReport({ operations, counterparties }: { operations: Operatio
   return (
     <Stack spacing={2}>
       <Grid container spacing={2}>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="INCOME" value={typeCounts.INCOME ?? 0} caption="Приемки: вручную и через EDI" icon={<Inventory2 />} tone="success" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="OUTCOME" value={typeCounts.OUTCOME ?? 0} caption="Отгрузки: вручную и через EDI" icon={<LocalShipping />} tone="warning" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="MOVE" value={typeCounts.MOVE ?? 0} caption="Перемещения" icon={<SyncAlt />} tone="primary" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Приемки" value={typeCounts.INCOME ?? 0} caption="Вручную и через EDI" icon={<Inventory2 />} tone="success" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Отгрузки" value={typeCounts.OUTCOME ?? 0} caption="Вручную и через EDI" icon={<LocalShipping />} tone="warning" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Перемещения" value={typeCounts.MOVE ?? 0} caption="Внутренние операции" icon={<SyncAlt />} tone="primary" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Через EDI" value={sourceCounts.EDI ?? 0} caption="Операции, оформленные EDI" icon={<SyncAlt />} tone="primary" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Вручную" value={sourceCounts.MANUAL ?? 0} caption="Операции MANUAL" icon={<BarChartIcon />} tone="neutral" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Завершенные" value={statusCounts.COMPLETED ?? 0} caption="Статус COMPLETED" icon={<Assessment />} tone="success" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Черновики" value={statusCounts.DRAFT ?? 0} caption="Статус DRAFT" icon={<BarChartIcon />} tone="warning" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Вручную" value={sourceCounts.MANUAL ?? 0} caption="Операции, созданные вручную" icon={<BarChartIcon />} tone="neutral" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Завершенные" value={statusCounts.COMPLETED ?? 0} caption="Завершенный статус" icon={<Assessment />} tone="success" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Черновики" value={statusCounts.DRAFT ?? 0} caption="Ожидают действия" icon={<BarChartIcon />} tone="warning" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 3 }}><KpiCard title="Отмененные" value={statusCounts.CANCELLED ?? 0} caption="Ошибочные или отмененные" icon={<FilterAltOff />} tone={statusCounts.CANCELLED ? 'error' : 'neutral'} /></Grid>
       </Grid>
       <SectionCard title="Складские операции">
@@ -730,7 +730,7 @@ function SuppliersReport({
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Всего поставщиков" value={supplierRows.length} caption="Контрагенты типа SUPPLIER/BOTH" icon={<Warehouse />} tone="primary" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Активных" value={activeSuppliers.length} caption="Были поставки или DESADV" icon={<Assessment />} tone="success" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Поставок" value={sum(supplierRows, (row) => row.deliveryCount)} caption="Завершенные INCOME" icon={<Inventory2 />} tone="success" /></Grid>
-        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Вручную" value={sum(supplierRows, (row) => row.manualDeliveries)} caption="Приемки MANUAL" icon={<BarChartIcon />} tone="neutral" /></Grid>
+        <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Вручную" value={sum(supplierRows, (row) => row.manualDeliveries)} caption="Приемки, созданные вручную" icon={<BarChartIcon />} tone="neutral" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Через EDI" value={sum(supplierRows, (row) => row.ediDeliveries)} caption="Приемки EDI" icon={<SyncAlt />} tone="primary" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="Принято товаров" value={n(sum(supplierRows, (row) => row.acceptedQuantity))} caption="Количество по приемкам" icon={<LocalShipping />} tone="primary" /></Grid>
         <Grid size={{ xs: 12, sm: 6, lg: 2 }}><KpiCard title="DESADV" value={sum(supplierRows, (row) => row.desadvCount)} caption="Входящие от поставщиков" icon={<SyncAlt />} tone="neutral" /></Grid>

@@ -78,7 +78,7 @@ export function OperationDetailsPage() {
           <Grid container spacing={2}>
             <Grid size={{ xs: 12, md: 3 }}><Typography color="text.secondary">Склад</Typography><Typography>{operation.warehouseCode || operation.warehouseId}</Typography></Grid>
             <Grid size={{ xs: 12, md: 3 }}><Typography color="text.secondary">Контрагент ID</Typography><Typography>{operation.counterpartyId || '—'}</Typography></Grid>
-            <Grid size={{ xs: 12, md: 3 }}><Typography color="text.secondary">Источник</Typography><Typography>{operation.source || 'MANUAL'}</Typography></Grid>
+            <Grid size={{ xs: 12, md: 3 }}><Typography color="text.secondary">Источник</Typography><Typography>{operation.source === 'EDI' ? 'EDI' : 'Вручную'}</Typography></Grid>
             <Grid size={{ xs: 12, md: 3 }}><Typography color="text.secondary">Документ</Typography><Typography>{operation.externalDocumentNumber || '—'}</Typography></Grid>
             <Grid size={{ xs: 12 }}><Divider /></Grid>
             <Grid size={{ xs: 12 }}><Typography color="text.secondary">Комментарий</Typography><Typography>{operation.comment || '—'}</Typography></Grid>
