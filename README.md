@@ -1,51 +1,180 @@
-# Warehouse ERP Demo Data
+# Warehouse System
 
-Локальная база может наполняться демонстрационными данными через `DemoDataInitializer`.
-Initializer работает только с профилем `dev` и включен по умолчанию для этого профиля.
+Дипломный проект: информационная система для автоматизации складского учета и движения товаров.
 
-## Как включить
+Проект включает:
 
-Запустите backend с профилем `dev`:
+- backend на Spring Boot;
+- frontend на React;
+- базу данных PostgreSQL;
+- Docker Compose-конфигурацию для запуска всего проекта одной командой.
+
+## Требования для запуска
+
+На компьютере должен быть установлен Docker:
+
+- Windows: Docker Desktop;
+- macOS: Docker Desktop;
+- Linux: Docker Engine и Docker Compose Plugin.
+
+Проверить установку можно командами:
 
 ```bash
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+docker --version
+docker compose version
 ```
 
-или укажите переменную окружения:
+Для первого запуска потребуется доступ к интернету, чтобы Docker скачал базовые образы и зависимости проекта.
+
+## Как запустить проект из архива
+
+1. Распакуйте архив с проектом в любую папку.
+2. Откройте терминал в корневой папке проекта, где находится файл `docker-compose.yml`.
+3. Выполните команду:
 
 ```bash
-SPRING_PROFILES_ACTIVE=dev
+docker compose up --build -d
 ```
 
-## Как отключить
+Docker автоматически:
 
-Для профиля `dev` можно отключить seed:
+- соберет backend-приложение;
+- соберет frontend-приложение;
+- запустит PostgreSQL;
+- применит миграции базы данных;
+- создаст начальных пользователей.
 
-```properties
-warehouse.demo-data.enabled=false
+## Как открыть приложение
+
+После успешного запуска откройте в браузере:
+
+```text
+http://localhost
 ```
 
-или запустить приложение без профиля `dev`.
+Backend API также доступен по адресу:
 
-## Demo users
+```text
+http://localhost:8080
+```
 
-- `admin` / `admin123` / `ADMIN`
-- `manager` / `manager123` / `MANAGER`
-- `storekeeper` / `storekeeper123` / `STOREKEEPER`
-- `warehouse_admin` / `admin123` / `ADMIN`
-- `warehouse_manager` / `manager123` / `MANAGER`
-- `warehouse_worker_1` / `worker123` / `STOREKEEPER`
-- `warehouse_worker_2` / `worker123` / `STOREKEEPER`
+Swagger UI:
 
-## Что создается
+```text
+http://localhost/swagger-ui.html
+```
 
-- 3 склада: `MSK-MAIN`, `GRD-REG`, `WEB-FULFILL`.
-- 45 ячеек хранения, включая активные, почти заполненные и одну неактивную.
-- 52 товара по категориям: электроника, комплектующие, кабели, инструменты, офис, расходники, сетевое и серверное оборудование.
-- 24 контрагента: 12 поставщиков и 12 клиентов.
-- Реалистичные остатки по ячейкам с пересчетом веса и объема.
-- 180 складских операций за последние месяцы: `INCOME`, `OUTCOME`, `MOVE`, статусы `COMPLETED`, `DRAFT`, `CANCELLED`, источники `MANUAL` и `EDI`.
-- EDI demo data: партнеры, mapping-и, 30+ сообщений, queue entries, audit entries и полные GRD-REG цепочки DESADV/ORDERS.
-- Audit log записи для отчетов и dashboard.
+## Тестовые пользователи
 
-Данные идемпотентны: справочники обновляются по уникальным кодам/SKU, операции и EDI-сообщения создаются по фиксированным `DEMO-*` номерам и не дублируются при повторном запуске.
+Для входа в систему можно использовать:
+
+| Логин | Пароль | Роль |
+| --- | --- | --- |
+| `admin` | `admin123` | Администратор |
+| `manager` | `manager123` | Менеджер |
+| `storekeeper` | `storekeeper123` | Кладовщик |
+
+## Полезные команды
+
+Посмотреть логи приложения:
+
+```bash
+docker compose logs -f
+```
+
+Остановить приложение:
+
+```bash
+docker compose down
+```
+
+Запустить повторно:
+
+```bash
+docker compose up -d
+```
+
+Полностью удалить контейнеры и базу данных:
+
+```bash
+docker compose down -v
+```
+
+После команды `docker compose down -v` все данные в базе будут удалены. При следующем запуске база создастся заново.
+
+## Если порт занят
+
+По умолчанию приложение использует порты:
+
+- `80` - frontend;
+- `8080` - backend;
+- `5432` - PostgreSQL.
+
+Если порт `80` уже занят, откройте файл `docker-compose.yml` и замените:
+
+```yaml
+ports:
+  - "80:80"
+```
+
+например на:
+
+```yaml
+ports:
+  - "8088:80"
+```
+
+После этого приложение будет доступно по адресу:
+
+```text
+http://localhost:8088
+```
+
+Если порт `5432` занят установленным PostgreSQL, можно удалить или закомментировать строку:
+
+```yaml
+- "5432:5432"
+```
+
+Backend внутри Docker продолжит подключаться к базе данных по внутреннему имени контейнера `postgres`.
+
+## Состав Docker-запуска
+
+В Docker Compose поднимаются три сервиса:
+
+| Сервис | Назначение |
+| --- | --- |
+| `postgres` | База данных PostgreSQL |
+| `backend` | Spring Boot REST API |
+| `frontend` | React-приложение на nginx |
+
+Данные PostgreSQL сохраняются в Docker volume `postgres-data`, поэтому они не удаляются при обычной остановке контейнеров.
+
+## Структура проекта
+
+```text
+.
+├── src/                 # backend Spring Boot
+├── frontend/            # frontend React
+├── docker-compose.yml   # запуск всего проекта
+├── Dockerfile           # сборка backend
+└── README.md            # инструкция по запуску
+```
+
+## Кратко для проверки комиссией
+
+```bash
+docker compose up --build -d
+```
+
+Затем открыть:
+
+```text
+http://localhost
+```
+
+Войти:
+
+```text
+admin / admin123
+```

@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:17.2
     container_name: warehouse-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: warehouse_db
       POSTGRES_USER: postgres
@@ -19,6 +20,7 @@ services:
   backend:
     build: .
     container_name: warehouse-backend
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,6 +33,15 @@ services:
       JWT_EXPIRATION: 86400000
     ports:
       - "8080:8080"
+
+  frontend:
+    build: ./frontend
+    container_name: warehouse-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
 
 volumes:
   postgres-data:

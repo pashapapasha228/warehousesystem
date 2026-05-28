@@ -70,7 +70,7 @@ export function AppLayout() {
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Toolbar sx={{ px: 2 }}>
         <Box>
-          <Typography variant="h6">Warehouse ERP</Typography>
+          <Typography variant="h6">Warehousesystem</Typography>
           <Typography variant="caption" color="text.secondary">Локальная складская панель</Typography>
         </Box>
       </Toolbar>

@@ -18,7 +18,7 @@ export function LoginPage() {
         <CardContent>
           <Stack spacing={2}>
             <Box>
-              <Typography variant="h4">Warehouse ERP</Typography>
+              <Typography variant="h4">Warehousesystem</Typography>
               <Typography color="text.secondary">Вход в локальную систему складского учета</Typography>
             </Box>
             {error && <Alert severity="error">{error}</Alert>}
@@ -40,9 +40,6 @@ export function LoginPage() {
             >
               Войти
             </Button>
-            <Typography variant="caption" color="text.secondary">
-              Тестовые учетные записи: admin/admin123, manager/manager123, storekeeper/storekeeper123.
-            </Typography>
           </Stack>
         </CardContent>
       </Card>

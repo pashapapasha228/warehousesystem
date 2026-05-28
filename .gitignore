@@ -29,5 +29,11 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+### Frontend ###
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+
 ### VS Code ###
 .vscode/
